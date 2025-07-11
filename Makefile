@@ -1,4 +1,4 @@
-.PHONY=
+.PHONY=migrate-up generate-app-key
 
 generate-app-key:
 	@echo "Generating application key.."
@@ -9,3 +9,13 @@ generate-app-key:
 	else \
 		echo "APP_KEY=$$APP_KEY" >> .env; \
 	fi
+
+DB_URL=postgres://$(DB_USERNAME):$(shell printf '%s' "$(DB_PASSWORD)" | sed -e 's/!/%21/g' -e 's/#/%23/g' -e 's/@/%40/g' -e 's/\$$/%24/g')@$(DB_HOST):$(DB_PORT)/$(DB_DATABASE)?sslmode=disable
+
+migrate-up:
+	@echo "Migrating database up.."
+	@migrate -path database/migrations -database "$(DB_URL)" up
+
+migrate-down:
+	@echo "Migrating database down.."
+	@migrate -path database/migrations -database "$(DB_URL)" down
