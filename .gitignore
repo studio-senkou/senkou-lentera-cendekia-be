@@ -1,0 +1,7 @@
+# Secret files
+.env
+.env.*
+!.env.example
+
+# Air verse
+/tmp
