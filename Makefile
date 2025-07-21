@@ -1,4 +1,7 @@
-.PHONY=migrate-up generate-app-key
+.PHONY=migrate-up migrate-down generate-app-key
+
+include .env
+export
 
 generate-app-key:
 	@echo "Generating application key.."
@@ -10,12 +13,23 @@ generate-app-key:
 		echo "APP_KEY=$$APP_KEY" >> .env; \
 	fi
 
-DB_URL=postgres://$(DB_USERNAME):$(shell printf '%s' "$(DB_PASSWORD)" | sed -e 's/!/%21/g' -e 's/#/%23/g' -e 's/@/%40/g' -e 's/\$$/%24/g')@$(DB_HOST):$(DB_PORT)/$(DB_DATABASE)?sslmode=disable
-
 migrate-up:
 	@echo "Migrating database up.."
-	@migrate -path database/migrations -database "$(DB_URL)" up
+	@DB_PASSWORD_ENCODED=$$(printf '%s' '$(DB_PASSWORD)' | sed -e 's/!/%21/g' -e 's/#/%23/g' -e 's/@/%40/g' -e 's/\$$/%24/g'); \
+	DB_URL="postgres://$(DB_USERNAME):$$DB_PASSWORD_ENCODED@$(DB_HOST):$(DB_PORT)/$(DB_DATABASE)?sslmode=disable"; \
+	migrate -path database/migrations -database "$$DB_URL" up
 
 migrate-down:
 	@echo "Migrating database down.."
-	@migrate -path database/migrations -database "$(DB_URL)" down
+	@DB_PASSWORD_ENCODED=$$(printf '%s' '$(DB_PASSWORD)' | sed -e 's/!/%21/g' -e 's/#/%23/g' -e 's/@/%40/g' -e 's/\$$/%24/g'); \
+	DB_URL="postgres://$(DB_USERNAME):$$DB_PASSWORD_ENCODED@$(DB_HOST):$(DB_PORT)/$(DB_DATABASE)?sslmode=disable"; \
+	migrate -path database/migrations -database "$$DB_URL" down
+
+create-migration:
+	@echo "Creating new migration file.."
+	@read -p "Enter migration name: " MIGRATION_NAME; \
+	if [ -z "$$MIGRATION_NAME" ]; then \
+		echo "Migration name cannot be empty"; \
+		exit 1; \
+	fi; \
+	migrate create -ext sql -dir database/migrations "$$MIGRATION_NAME"
