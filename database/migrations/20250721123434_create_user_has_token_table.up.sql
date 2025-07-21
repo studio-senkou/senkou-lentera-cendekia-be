@@ -1,0 +1,9 @@
+CREATE TABLE users_has_token (
+    id SERIAL PRIMARY KEY,
+    user_id SERIAL NOT NULL,
+    token TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+)

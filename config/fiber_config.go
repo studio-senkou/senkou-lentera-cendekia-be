@@ -12,8 +12,16 @@ func NewFiberConfig() *fiber.Config {
 		StrictRouting:           true,
 		EnableTrustedProxyCheck: true,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error":   "Internal Server Error",
+			code := fiber.StatusInternalServerError
+			message := "Internal Server Error"
+
+			if e, ok := err.(*fiber.Error); ok {
+				code = e.Code
+				message = e.Message
+			}
+
+			return c.Status(code).JSON(fiber.Map{
+				"error":   message,
 				"message": err.Error(),
 			})
 		},

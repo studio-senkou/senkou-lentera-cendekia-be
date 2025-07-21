@@ -1,6 +1,6 @@
 package main
 
-import "github.com/studio-senkou/lentera-quiz-be/cmd"
+import "github.com/studio-senkou/lentera-cendekia-be/cmd"
 
 // Senkou Lentera Quiz API
 // @title Lentera Quiz API

@@ -5,8 +5,10 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/studio-senkou/lentera-quiz-be/config"
-	"github.com/studio-senkou/lentera-quiz-be/utils"
+	"github.com/studio-senkou/lentera-cendekia-be/app/routes"
+	"github.com/studio-senkou/lentera-cendekia-be/config"
+	"github.com/studio-senkou/lentera-cendekia-be/database"
+	"github.com/studio-senkou/lentera-cendekia-be/utils/app"
 )
 
 type Application interface {
@@ -21,16 +23,24 @@ func NewApplication() Application {
 }
 
 func (a *application) Run() error {
-	app := fiber.New(*config.NewFiberConfig())
+	if err := database.InitializeDatabase(); err != nil {
+		return fmt.Errorf("failed to initialize database: %w", err)
+	}
+	defer database.CloseDatabase()
 
-	app.Use(config.NewLoggerConfig())
-	app.Use(config.NewCORSConfig())
+	fiberApp := fiber.New(*config.NewFiberConfig())
 
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.SendString("Welcome to Lentera Quiz API")
+	fiberApp.Use(config.NewLoggerConfig())
+	fiberApp.Use(config.NewCORSConfig())
+
+	router := fiberApp.Group("/api/v1")
+	routes.SetupUserRoutes(router)
+
+	fiberApp.Get("/", func(c *fiber.Ctx) error {
+		return c.SendString("Welcome to Lentera Cendekia API")
 	})
 
-	if err := app.Listen(fmt.Sprintf(":%s", utils.GetEnv("APP_PORT", "9000"))); err != nil {
+	if err := fiberApp.Listen(fmt.Sprintf(":%s", app.GetEnv("APP_PORT", "9000"))); err != nil {
 		return errors.New("failed to start server: " + err.Error())
 	}
 
