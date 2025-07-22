@@ -9,10 +9,10 @@ import (
 func SetupMeetingSessionRoutes(router fiber.Router) {
 	meetingSessionController := controllers.NewMeetingSessionController()
 
-	router.Post("/meeting-sessions", middlewares.AuthMiddleware(), meetingSessionController.CreateMeetingSession)
+	router.Post("/meeting-sessions", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("admin"), meetingSessionController.CreateMeetingSession)
 	router.Get("/meeting-sessions", middlewares.AuthMiddleware(), meetingSessionController.GetMeetingSession)
 	router.Get("/meeting-sessions/:id", middlewares.AuthMiddleware(), meetingSessionController.GetMeetingSessionByID)
-	router.Put("/meeting-sessions/:id", middlewares.AuthMiddleware(), meetingSessionController.UpdateMeetingSession)
-	router.Delete("/meeting-sessions/:id", middlewares.AuthMiddleware(), meetingSessionController.DeleteMeetingSession)
+	router.Put("/meeting-sessions/:id", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("admin"), meetingSessionController.UpdateMeetingSession)
+	router.Delete("/meeting-sessions/:id", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("admin"), meetingSessionController.DeleteMeetingSession)
 	router.Patch("/meeting-sessions/:id/:status", middlewares.AuthMiddleware(), meetingSessionController.UpdateMeetingSessionStatus)
 }

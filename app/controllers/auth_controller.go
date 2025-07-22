@@ -63,7 +63,10 @@ func (ac *AuthController) Login(c *fiber.Ctx) error {
 		})
 	}
 
-	accessToken, err := ac.jwtManager.GenerateToken(user.ID, time.Now().Add(24*time.Hour))
+	accessToken, err := ac.jwtManager.GenerateToken(auth.Payload{
+		UserID: user.ID,
+		Role:   user.Role,
+	}, time.Now().Add(24*time.Hour))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "fail",
@@ -72,7 +75,10 @@ func (ac *AuthController) Login(c *fiber.Ctx) error {
 		})
 	}
 
-	refreshToken, err2 := ac.jwtManager.GenerateToken(user.ID, time.Now().Add(30*24*time.Hour))
+	refreshToken, err2 := ac.jwtManager.GenerateToken(auth.Payload{
+		UserID: user.ID,
+		Role:   user.Role,
+	}, time.Now().Add(30*24*time.Hour))
 	if err2 != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "fail",
@@ -129,7 +135,8 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 		})
 	}
 
-	userIDStr := fmt.Sprintf("%v", claims["payload"])
+	payload := claims["payload"].(auth.Payload)
+	userIDStr := fmt.Sprintf("%v", payload.UserID)
 	userID, err := strconv.ParseInt(userIDStr, 10, 32)
 
 	if err != nil {
@@ -148,7 +155,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 		})
 	}
 
-	newAccessToken, err := ac.jwtManager.GenerateToken(int(userID), time.Now().Add(24*time.Hour))
+	newAccessToken, err := ac.jwtManager.GenerateToken(payload, time.Now().Add(24*time.Hour))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "fail",
@@ -157,7 +164,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 		})
 	}
 
-	newRefreshToken, err2 := ac.jwtManager.GenerateToken(int(userID), time.Now().Add(30*24*time.Hour))
+	newRefreshToken, err2 := ac.jwtManager.GenerateToken(payload, time.Now().Add(30*24*time.Hour))
 	if err2 != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "fail",

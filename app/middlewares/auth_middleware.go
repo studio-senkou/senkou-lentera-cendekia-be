@@ -30,8 +30,6 @@ func AuthMiddleware() fiber.Handler {
 
 		_, err := fmt.Sscanf(token, "Bearer %s", &authToken)
 
-		// If the token is not in the correct format, we return an Uauthorized response
-		// The correct format is "Bearer <token>"
 		if err != nil || authToken == "" {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"status":  "fail",
@@ -39,9 +37,6 @@ func AuthMiddleware() fiber.Handler {
 			})
 		}
 
-		// Validat the token using the JWT manager
-		// If the token is invalid, we return an Unauthorized response
-		// The ValidateToken method will return the claims if the token is valid
 		claims, err := jwtManager.ValidateToken(authToken)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
@@ -50,7 +45,47 @@ func AuthMiddleware() fiber.Handler {
 			})
 		}
 
-		c.Locals("userID", claims["payload"])
+		// Safe type assertion untuk payload
+		payload, exists := claims["payload"]
+		if !exists {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "Invalid token payload",
+			})
+		}
+
+		payloadMap, ok := payload.(map[string]any)
+		if !ok {
+			return c.Status(401).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "Invalid token payload format",
+			})
+		}
+
+		var userID int
+		if id, ok := payloadMap["user_id"].(float64); ok {
+			userID = int(id)
+		} else if id, ok := payloadMap["userID"].(float64); ok {
+			userID = int(id)
+		} else {
+			return c.Status(401).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "Invalid user ID in token",
+				"error":   "Invalid user ID",
+			})
+		}
+
+		userRole, ok := payloadMap["role"].(string)
+		if !ok {
+			return c.Status(401).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "Invalid role in token",
+				"error":   "Invalid role",
+			})
+		}
+
+		c.Locals("userID", userID)
+		c.Locals("userRole", userRole)
 
 		return c.Next()
 	}

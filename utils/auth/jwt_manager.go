@@ -12,6 +12,11 @@ type JwtManager struct {
 	secret []byte
 }
 
+type Payload struct {
+	UserID int    `json:"user_id"`
+	Role   string `json:"role"`
+}
+
 type AuthToken struct {
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expires_at"`
@@ -23,9 +28,9 @@ func NewJwtManager(secret string) *JwtManager {
 	}
 }
 
-func (j *JwtManager) GenerateToken(userID int, expiry time.Time) (*AuthToken, error) {
+func (j *JwtManager) GenerateToken(payload Payload, expiry time.Time) (*AuthToken, error) {
 	jwtClaims := jwt.MapClaims{
-		"payload": userID,
+		"payload": payload,
 		"exp":     jwt.NewNumericDate(expiry),
 		"iat":     jwt.NewNumericDate(time.Now()),
 	}
