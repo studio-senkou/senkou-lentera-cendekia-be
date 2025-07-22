@@ -36,6 +36,7 @@ func (a *application) Run() error {
 	router := fiberApp.Group("/api/v1")
 	routes.SetupUserRoutes(router)
 	routes.SetupAuthRoutes(router)
+	routes.SetupMeetingSessionRoutes(router)
 
 	fiberApp.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("Welcome to Lentera Cendekia API")

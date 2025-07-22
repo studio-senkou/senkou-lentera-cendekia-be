@@ -8,7 +8,8 @@ import (
 func SetupUserRoutes(router fiber.Router) {
 	userController := controllers.NewUserController()
 
-	router.Post("/users", userController.CreateUser)
+	router.Post("/users", userController.CreateStudent)
+	router.Post("/users/mentors", userController.CreateMentor)
 	router.Get("/users", userController.GetAllUsers)
 	router.Get("/users/:id", userController.GetUser)
 	router.Put("/users/:id", userController.UpdateUser)

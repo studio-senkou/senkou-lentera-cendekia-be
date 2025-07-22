@@ -22,7 +22,15 @@ func NewUserController() *UserController {
 	}
 }
 
-func (uc *UserController) CreateUser(c *fiber.Ctx) error {
+func (uc *UserController) CreateMentor(c *fiber.Ctx) error {
+	return uc.CreateUser(c, "mentor")
+}
+
+func (uc *UserController) CreateStudent(c *fiber.Ctx) error {
+	return uc.CreateUser(c, "student")
+}
+
+func (uc *UserController) CreateUser(c *fiber.Ctx, role string) error {
 	createUserRequest := new(requests.CreateUserRequest)
 
 	if validationError, err := validator.ValidateRequest(c, createUserRequest); err != nil {
@@ -41,6 +49,7 @@ func (uc *UserController) CreateUser(c *fiber.Ctx) error {
 		Name:     createUserRequest.Name,
 		Email:    createUserRequest.Email,
 		Password: createUserRequest.Password,
+		Role:     role,
 	}
 
 	if err := uc.userRepo.Create(user); err != nil {
