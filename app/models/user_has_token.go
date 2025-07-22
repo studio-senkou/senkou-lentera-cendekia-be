@@ -45,8 +45,8 @@ func (r *AuthenticationRepository) ValidateSessionExist(userID int, token string
 	return exists, nil
 }
 
-func (r *AuthenticationRepository) InvalidateToken(userID int, token string) error {
-	query := `DELETE FROM user_has_tokens WHERE user_id = $1 AND token = $2`
-	_, err := r.db.Exec(query, userID, token)
+func (r *AuthenticationRepository) InvalidateToken(userID int) error {
+	query := `DELETE FROM user_has_tokens WHERE user_id = $1`
+	_, err := r.db.Exec(query, userID)
 	return err
 }

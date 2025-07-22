@@ -188,3 +188,29 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 		},
 	})
 }
+
+func (ac *AuthController) Logout(c *fiber.Ctx) error {
+	userIDStr := fmt.Sprintf("%v", c.Locals("userID"))
+	userID, err := strconv.ParseInt(userIDStr, 10, 32)
+
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Unable to log out",
+			"error":   "Invalid user ID",
+		})
+	}
+
+	if err := ac.authRepo.InvalidateToken(int(userID)); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Unable to log out",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "Successfully logged out",
+	})
+}
