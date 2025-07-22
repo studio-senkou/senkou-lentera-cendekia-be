@@ -16,7 +16,7 @@ type UserController struct {
 }
 
 func NewUserController() *UserController {
-	db := database.GetDB().GetDB()
+	db := database.GetDB()
 	return &UserController{
 		userRepo: models.NewUserRepository(db),
 	}
@@ -52,7 +52,9 @@ func (uc *UserController) CreateUser(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"status":  "success",
 		"message": "User created successfully",
-		"data":    user,
+		"data": fiber.Map{
+			"user": user,
+		},
 	})
 }
 

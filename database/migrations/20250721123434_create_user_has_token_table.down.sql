@@ -1,1 +1,1 @@
-DROP TABLE IF EXISTS users_has_token;
+DROP TABLE IF EXISTS user_has_tokens;

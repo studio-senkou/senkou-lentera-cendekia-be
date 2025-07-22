@@ -1,6 +1,8 @@
 package database
 
 import (
+	"database/sql"
+
 	"github.com/studio-senkou/lentera-cendekia-be/database/facades"
 )
 
@@ -18,6 +20,6 @@ func CloseDatabase() error {
 	return nil
 }
 
-func GetDB() *facades.DatabaseFacade {
-	return DB
+func GetDB() *sql.DB {
+	return DB.GetDB()
 }

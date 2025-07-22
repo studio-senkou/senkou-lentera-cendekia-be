@@ -69,6 +69,21 @@ func (r *UserRepository) GetByID(id int) (*User, error) {
 	return user, nil
 }
 
+func (r *UserRepository) GetByEmail(email string) (*User, error) {
+	query := `SELECT id, name, email, password, created_at, updated_at FROM users WHERE email = $1`
+
+	user := new(User)
+	err := r.db.QueryRow(query, email).Scan(&user.ID, &user.Name, &user.Email, &user.Password, &user.CreatedAt, &user.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
 func (r *UserRepository) Create(user *User) error {
 	query := `INSERT INTO users (name, email, password, created_at, updated_at) 
 			  VALUES ($1, $2, $3, NOW(), NOW()) 

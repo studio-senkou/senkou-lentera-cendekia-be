@@ -1,6 +1,6 @@
-CREATE TABLE users_has_token (
+CREATE TABLE user_has_tokens (
     id SERIAL PRIMARY KEY,
-    user_id SERIAL NOT NULL,
+    user_id SERIAL NOT NULL UNIQUE,
     token TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
