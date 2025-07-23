@@ -9,8 +9,8 @@ type MeetingSession struct {
 	ID                     int       `json:"id"`
 	UserID                 int       `json:"user_id"`
 	MentorID               int       `json:"mentor_id"`
-	User                   User      `json:"-"`
-	Mentor                 User      `json:"-"`
+	User                   User      `json:"student"`
+	Mentor                 User      `json:"mentor"`
 	SessionDate            string    `json:"session_date"`
 	SessionTime            string    `json:"session_time"`
 	SessionDuration        int       `json:"session_duration"` // Duration in minutes
@@ -62,12 +62,18 @@ func (repo *MeetingSessionRepository) Create(session *MeetingSession) error {
 
 func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
 	query := `
-		SELECT id, user_id, mentor_id, session_date, session_time, session_duration,
-		       session_type, session_topic, session_description, session_proof,
-		       session_feedback, student_attendance_proof, mentor_attendance_proof,
-		       session_status, created_at, updated_at
-		FROM meeting_sessions
-	`
+        SELECT 
+            ms.id, ms.user_id, ms.mentor_id, ms.session_date, ms.session_time, 
+            ms.session_duration, ms.session_type, ms.session_topic, ms.session_description,
+            ms.session_proof, ms.session_feedback, ms.student_attendance_proof,
+            ms.mentor_attendance_proof, ms.session_status, ms.created_at, ms.updated_at,
+            u.id as user_id, u.name as user_name, u.email as user_email, u.role as user_role,
+            m.id as mentor_id, m.name as mentor_name, m.email as mentor_email, m.role as mentor_role
+        FROM meeting_sessions ms
+        LEFT JOIN users u ON ms.user_id = u.id
+        LEFT JOIN users m ON ms.mentor_id = m.id
+        ORDER BY ms.created_at DESC
+    `
 
 	rows, err := repo.db.Query(query)
 	if err != nil {
@@ -78,26 +84,25 @@ func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
 	sessions := make([]*MeetingSession, 0)
 	for rows.Next() {
 		session := &MeetingSession{}
-		if err := rows.Scan(
-			&session.ID,
-			&session.UserID,
-			&session.MentorID,
-			&session.SessionDate,
-			&session.SessionTime,
-			&session.SessionDuration,
-			&session.SessionType,
-			&session.SessionTopic,
-			&session.SessionDescription,
-			&session.SessionProof,
-			&session.SessionFeedback,
-			&session.StudentAttendanceProof,
-			&session.MentorAttendanceProof,
-			&session.SessionStatus,
-			&session.CreatedAt,
-			&session.UpdatedAt,
-		); err != nil {
+		user := &User{}
+		mentor := &User{}
+
+		err := rows.Scan(
+			&session.ID, &session.UserID, &session.MentorID, &session.SessionDate,
+			&session.SessionTime, &session.SessionDuration, &session.SessionType,
+			&session.SessionTopic, &session.SessionDescription, &session.SessionProof,
+			&session.SessionFeedback, &session.StudentAttendanceProof,
+			&session.MentorAttendanceProof, &session.SessionStatus,
+			&session.CreatedAt, &session.UpdatedAt,
+			&user.ID, &user.Name, &user.Email, &user.Role,
+			&mentor.ID, &mentor.Name, &mentor.Email, &mentor.Role,
+		)
+		if err != nil {
 			return nil, err
 		}
+
+		session.User = *user
+		session.Mentor = *mentor
 		sessions = append(sessions, session)
 	}
 
@@ -105,38 +110,46 @@ func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
 }
 
 func (repo *MeetingSessionRepository) GetByID(id int) (*MeetingSession, error) {
-	query := `
-		SELECT id, user_id, mentor_id, session_date, session_time, session_duration,
-		       session_type, session_topic, session_description, session_proof,
-		       session_feedback, student_attendance_proof, mentor_attendance_proof,
-		       session_status, created_at, updated_at
-		FROM meeting_sessions WHERE id = $1
-	`
+    query := `
+        SELECT 
+            ms.id, ms.user_id, ms.mentor_id, ms.session_date, ms.session_time, 
+            ms.session_duration, ms.session_type, ms.session_topic, ms.session_description,
+            ms.session_proof, ms.session_feedback, ms.student_attendance_proof,
+            ms.mentor_attendance_proof, ms.session_status, ms.created_at, ms.updated_at,
+            u.id, u.name, u.email, u.role, u.created_at, u.updated_at,
+            m.id, m.name, m.email, m.role, m.created_at, m.updated_at
+        FROM meeting_sessions ms
+        LEFT JOIN users u ON ms.user_id = u.id
+        LEFT JOIN users m ON ms.mentor_id = m.id
+        WHERE ms.id = $1
+    `
 
-	session := &MeetingSession{}
-	err := repo.db.QueryRow(query, id).Scan(
-		&session.ID,
-		&session.UserID,
-		&session.MentorID,
-		&session.SessionDate,
-		&session.SessionTime,
-		&session.SessionDuration,
-		&session.SessionType,
-		&session.SessionTopic,
-		&session.SessionDescription,
-		&session.SessionProof,
-		&session.SessionFeedback,
-		&session.StudentAttendanceProof,
-		&session.MentorAttendanceProof,
-		&session.SessionStatus,
-		&session.CreatedAt,
-		&session.UpdatedAt,
-	)
+    session := &MeetingSession{}
+    user := &User{}
+    mentor := &User{}
 
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	return session, err
+    err := repo.db.QueryRow(query, id).Scan(
+        &session.ID, &session.UserID, &session.MentorID, &session.SessionDate,
+        &session.SessionTime, &session.SessionDuration, &session.SessionType,
+        &session.SessionTopic, &session.SessionDescription, &session.SessionProof,
+        &session.SessionFeedback, &session.StudentAttendanceProof,
+        &session.MentorAttendanceProof, &session.SessionStatus,
+        &session.CreatedAt, &session.UpdatedAt,
+        &user.ID, &user.Name, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+        &mentor.ID, &mentor.Name, &mentor.Email, &mentor.Role, &mentor.CreatedAt, &mentor.UpdatedAt,
+    )
+
+    if err == sql.ErrNoRows {
+        return nil, nil
+    }
+    if err != nil {
+        return nil, err
+    }
+
+    session.User = *user
+    session.Mentor = *mentor
+
+    return session, nil
 }
 
 func (repo *MeetingSessionRepository) Update(session *MeetingSession) error {

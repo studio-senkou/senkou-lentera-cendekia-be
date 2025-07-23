@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Welcome {{.Name}} to Lentera Cendekia</title>
+    <style>
+      body {
+        background: #f6f6f6;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+      }
+      .container {
+        background: #fff;
+        max-width: 500px;
+        margin: 40px auto;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+        padding: 32px 24px;
+      }
+      .header {
+        text-align: center;
+        margin-bottom: 24px;
+      }
+      .header h1 {
+        color: #2c3e50;
+        margin: 0;
+        font-size: 24px;
+      }
+      .content h2 {
+        color: #2980b9;
+        margin-top: 0;
+      }
+      .content p {
+        color: #444;
+        line-height: 1.6;
+      }
+      .button {
+        display: inline-block;
+        margin-top: 20px;
+        padding: 12px 28px;
+        background: #2980b9;
+        color: #fff !important;
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 16px;
+        transition: background 0.2s;
+      }
+      .button:hover {
+        background: #1c5d8c;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Selamat datang di Lentera Cendekia</h1>
+      </div>
+
+      <div class="content">
+        <h2>Halo {{.Name}}!</h2>
+        <p>
+          Selamat bergabung, kami sangat senang Anda telah menjadi bagian dari
+          Lentera Cendekia.
+        </p>
+
+        <p>
+          Untuk memulai, silakan klik tombol di bawah ini untuk mengaktifkan
+          akun Anda:
+        </p>
+        <a href="{{.ActivationLink}}" class="button">Aktifkan Akun</a>
+      </div>
+    </div>
+  </body>
+</html>

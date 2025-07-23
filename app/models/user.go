@@ -8,13 +8,15 @@ import (
 )
 
 type User struct {
-	ID        int       `json:"id"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"` // 'user', 'mentor', 'admin'
-	Password  string    `json:"-"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              int        `json:"id"`
+	Name            string     `json:"name"`
+	Email           string     `json:"email"`
+	Role            string     `json:"role"` // 'user', 'mentor', 'admin'
+	Password        string     `json:"-"`
+	EmailVerifiedAt *time.Time `json:"email_verified_at,omitempty"`
+	IsActive        bool       `json:"is_active"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 func (u *User) HashPassword() ([]byte, error) {
@@ -23,6 +25,15 @@ func (u *User) HashPassword() ([]byte, error) {
 
 func (u *User) CheckPassword(password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)) == nil
+}
+
+func (u *User) IsEmailVerified() bool {
+	return u.EmailVerifiedAt != nil
+}
+
+func (u *User) MarkEmailAsVerified() {
+	now := time.Now()
+	u.EmailVerifiedAt = &now
 }
 
 type UserRepository struct {
@@ -46,6 +57,50 @@ func (r *UserRepository) GetAll() ([]*User, error) {
 	for rows.Next() {
 		var user User
 		err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, &user)
+	}
+
+	return users, nil
+}
+
+func (r *UserRepository) GetUserDropdown() ([]*User, error) {
+	query := `SELECT id, name FROM users WHERE role = 'user' ORDER BY name`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := make([]*User, 0)
+	for rows.Next() {
+		var user User
+		err := rows.Scan(&user.ID, &user.Name)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, &user)
+	}
+
+	return users, nil
+}
+
+func (r *UserRepository) GetMentorDropdown() ([]*User, error) {
+	query := `SELECT id, name FROM users WHERE role = 'mentor' ORDER BY name`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := make([]*User, 0)
+	for rows.Next() {
+		var user User
+		err := rows.Scan(&user.ID, &user.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -100,11 +155,19 @@ func (r *UserRepository) Create(user *User) error {
 }
 
 func (r *UserRepository) Update(user *User) error {
-	query := `UPDATE users SET name = $1, email = $2, updated_at = NOW() 
-			  WHERE id = $3 
-			  RETURNING updated_at`
+	query := `UPDATE users 
+		SET name = $1, email = $2, email_verified_at = $3, is_active = $4, updated_at = NOW() 
+		WHERE id = $5 
+		RETURNING updated_at`
 
-	err := r.db.QueryRow(query, user.Name, user.Email, user.ID).Scan(&user.UpdatedAt)
+	err := r.db.QueryRow(
+		query,
+		user.Name,
+		user.Email,
+		user.EmailVerifiedAt,
+		user.IsActive,
+		user.ID,
+	).Scan(&user.UpdatedAt)
 	return err
 }
 
