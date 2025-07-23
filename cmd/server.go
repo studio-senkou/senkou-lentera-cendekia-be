@@ -9,6 +9,7 @@ import (
 	"github.com/studio-senkou/lentera-cendekia-be/config"
 	"github.com/studio-senkou/lentera-cendekia-be/database"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/app"
+	"github.com/studio-senkou/lentera-cendekia-be/utils/cache"
 )
 
 type Application interface {
@@ -27,6 +28,11 @@ func (a *application) Run() error {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 	defer database.CloseDatabase()
+
+	if err := cache.InitRedis(); err != nil {
+		return fmt.Errorf("failed to initialize Redis: %w", err)
+	}
+	defer cache.CloseRedis()
 
 	fiberApp := fiber.New(*config.NewFiberConfig())
 
