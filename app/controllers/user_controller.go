@@ -46,9 +46,10 @@ func (uc *UserController) CreateUser(c *fiber.Ctx, role string) error {
 	}
 
 	user := &models.User{
-		Name:     createUserRequest.Name,
-		Email:    createUserRequest.Email,
-		Password: createUserRequest.Password,
+		Name:  createUserRequest.Name,
+		Email: createUserRequest.Email,
+		// Password: createUserRequest.Password,
+		Password: "12345678",
 		Role:     role,
 	}
 

@@ -135,8 +135,26 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 		})
 	}
 
-	payload := claims["payload"].(auth.Payload)
-	userIDStr := fmt.Sprintf("%v", payload.UserID)
+	payloadMap, ok := claims["payload"].(map[string]any)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid token payload format",
+		})
+	}
+
+	var parsedUserID int
+	if id, ok := payloadMap["user_id"].(float64); ok {
+		parsedUserID = int(id)
+	} else {
+		return c.Status(401).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid user ID in token",
+			"error":   "Invalid user ID",
+		})
+	}
+
+	userIDStr := fmt.Sprintf("%v", parsedUserID)
 	userID, err := strconv.ParseInt(userIDStr, 10, 32)
 
 	if err != nil {
@@ -155,7 +173,12 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 		})
 	}
 
-	newAccessToken, err := ac.jwtManager.GenerateToken(payload, time.Now().Add(24*time.Hour))
+	newPayload := auth.Payload{
+		UserID: int(userID),
+		Role:   payloadMap["role"].(string),
+	}
+
+	newAccessToken, err := ac.jwtManager.GenerateToken(newPayload, time.Now().Add(24*time.Hour))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "fail",
@@ -164,7 +187,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 		})
 	}
 
-	newRefreshToken, err2 := ac.jwtManager.GenerateToken(payload, time.Now().Add(30*24*time.Hour))
+	newRefreshToken, err2 := ac.jwtManager.GenerateToken(newPayload, time.Now().Add(30*24*time.Hour))
 	if err2 != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "fail",

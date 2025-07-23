@@ -65,8 +65,6 @@ func AuthMiddleware() fiber.Handler {
 		var userID int
 		if id, ok := payloadMap["user_id"].(float64); ok {
 			userID = int(id)
-		} else if id, ok := payloadMap["userID"].(float64); ok {
-			userID = int(id)
 		} else {
 			return c.Status(401).JSON(fiber.Map{
 				"status":  "fail",

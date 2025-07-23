@@ -34,7 +34,7 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 }
 
 func (r *UserRepository) GetAll() ([]*User, error) {
-	query := `SELECT id, name, email, created_at, updated_at FROM users ORDER BY id`
+	query := `SELECT id, name, email, role, created_at, updated_at FROM users ORDER BY id`
 
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -45,7 +45,7 @@ func (r *UserRepository) GetAll() ([]*User, error) {
 	users := make([]*User, 0)
 	for rows.Next() {
 		var user User
-		err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.CreatedAt, &user.UpdatedAt)
+		err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
