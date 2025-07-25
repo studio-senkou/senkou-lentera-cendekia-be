@@ -33,3 +33,15 @@ create-migration:
 		exit 1; \
 	fi; \
 	migrate create -ext sql -dir database/migrations "$$MIGRATION_NAME"
+
+migrate-fresh:
+	@echo "Running fresh migration.."
+	@DB_PASSWORD_ENCODED=$$(printf '%s' '$(DB_PASSWORD)' | sed -e 's/!/%21/g' -e 's/#/%23/g' -e 's/@/%40/g' -e 's/\$$/%24/g'); \
+	DB_URL="postgres://$(DB_USERNAME):$$DB_PASSWORD_ENCODED@$(DB_HOST):$(DB_PORT)/$(DB_DATABASE)?sslmode=disable"; \
+	migrate -path database/migrations -database "$$DB_URL" down -all; \
+	migrate -path database/migrations -database "$$DB_URL" up
+
+seed:
+	@echo "Seeding database.."
+	@go run database/seeders/database_seeder.go
+	@echo "Database seeding completed."

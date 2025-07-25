@@ -1,1 +1,1 @@
-DROP TABLE IF EXISTS user_has_tokens;
+DROP TABLE IF EXISTS user_has_tokens CASCADE;
