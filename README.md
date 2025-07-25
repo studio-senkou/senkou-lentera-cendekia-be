@@ -1,4 +1,4 @@
-# Senkou Lentera Quiz API
+# Senkou Lentera Cendekia API
 
 An Educational platform designed to support online learning and teaching. Provided with comprehensive suite and tools for management courses, student engagement, and educational content delivery.
 
