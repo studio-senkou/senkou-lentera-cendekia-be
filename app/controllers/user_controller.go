@@ -30,7 +30,7 @@ func (uc *UserController) CreateMentor(c *fiber.Ctx) error {
 }
 
 func (uc *UserController) CreateStudent(c *fiber.Ctx) error {
-	return uc.CreateUser(c, "student")
+	return uc.CreateUser(c, "user")
 }
 
 func (uc *UserController) CreateUser(c *fiber.Ctx, role string) error {
@@ -51,7 +51,6 @@ func (uc *UserController) CreateUser(c *fiber.Ctx, role string) error {
 	user := &models.User{
 		Name:  createUserRequest.Name,
 		Email: createUserRequest.Email,
-		// Password: createUserRequest.Password,
 		Password: "12345678",
 		Role:     role,
 	}
@@ -70,9 +69,7 @@ func (uc *UserController) CreateUser(c *fiber.Ctx, role string) error {
 	}
 
 	email, err := gomail.NewMailFromTemplate(
-		// user.Email,
-		// "ajhmdni02@gmail.com",
-		"studio.senkou@gmail.com",
+		user.Email,
 		"Welcome aboard to Lentera Cendekia",
 		"templates/emails/welcome.html",
 		fiber.Map{
@@ -149,7 +146,7 @@ func (uc *UserController) ActivateUser(c *fiber.Ctx) error {
 	user.MarkEmailAsVerified()
 	user.IsActive = true
 
-	if err := uc.userRepo.Update(user); err != nil {
+	if _, err := uc.userRepo.Update(user); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Failed to activate user",
@@ -286,10 +283,37 @@ func (uc *UserController) UpdateUser(c *fiber.Ctx) error {
 	user.Name = updateUserRequest.Name
 	user.Email = updateUserRequest.Email
 
-	if err := uc.userRepo.Update(user); err != nil {
+	updatedEmail, err := uc.userRepo.Update(user);
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to update user",
 		})
+	}
+
+	if updatedEmail != "" {
+		activationToken, err := auth.GenerateOneTimeToken(user.ID, "account_activation", 24*time.Hour)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to generate activation token",
+			})
+		}
+
+		email, err := gomail.NewMailFromTemplate(
+			user.Email,
+			"Email Change Verification",
+			"templates/emails/email_change_verification.html",
+			fiber.Map{
+				"Name":           user.Name,
+				"ActivationLink": "https://portal.lenteracendekia.id/activate?token=" + activationToken.Token,
+			},
+		)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to generate email from template",
+			})
+		}
+
+		email.Send()
 	}
 
 	return c.JSON(fiber.Map{

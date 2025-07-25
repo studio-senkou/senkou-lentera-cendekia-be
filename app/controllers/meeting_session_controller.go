@@ -1,12 +1,15 @@
 package controllers
 
 import (
+	"database/sql"
+	"fmt"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/studio-senkou/lentera-cendekia-be/app/models"
 	"github.com/studio-senkou/lentera-cendekia-be/app/requests"
 	"github.com/studio-senkou/lentera-cendekia-be/database"
+	"github.com/studio-senkou/lentera-cendekia-be/utils/storage"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/validator"
 )
 
@@ -192,6 +195,231 @@ func (mc *MeetingSessionController) DeleteMeetingSession(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  "success",
 		"message": "Meeting session deleted successfully",
+	})
+}
+
+func (mc *MeetingSessionController) UserAttend(c *fiber.Ctx) error {
+	meetingID, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid meeting session ID",
+			"error":   "ID must be a number",
+		})
+	}
+
+	userIDStr := fmt.Sprintf("%v", c.Locals("userID"))
+	userID, err := strconv.ParseInt(userIDStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Unauthorized",
+			"error":   "Invalid user ID",
+		})
+	}
+
+	if err := mc.meetingSessionRepo.VerifyAttendance(meetingID, int(userID), false); err != nil {
+		if err == sql.ErrNoRows {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "You have already attended this session or session does not exist",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Cannot verify attendance",
+			"error":   "User has already attended this session or session does not exist",
+		})
+	}
+
+	sessionProof, err := c.FormFile("session_proof")
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Cannot parse request body",
+			"error":   err.Error(),
+		})
+	} else if sessionProof == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Session proof image is required",
+		})
+	}
+
+	sessionAttendanceProof, err := c.FormFile("session_attendance_proof")
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Cannot parse request body",
+			"error":   err.Error(),
+		})
+	} else if sessionAttendanceProof == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Session attendance proof image is required",
+		})
+	}
+
+	if !storage.IsValidImageExtension(sessionProof.Filename) || !storage.IsValidImageExtension(sessionAttendanceProof.Filename) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid session proof image format",
+		})
+	}
+
+	maxSize := int64(0.5 * 1024 * 1024)
+	if sessionProof.Size > maxSize || sessionAttendanceProof.Size > maxSize {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Session proof image size exceeds 500KB",
+		})
+	}
+
+	uploadedSessionProofPath, err := storage.UploadFileToStorage(sessionProof, "meeting_sessions", "MEET-SESSION", nil)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to upload session proof image",
+			"error":   err.Error(),
+		})
+	}
+
+	uploadedSessionAttendanceProofPath, err := storage.UploadFileToStorage(sessionAttendanceProof, "meeting_sessions", "MEET-SESSION", nil)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to upload session attendance proof image",
+			"error":   err.Error(),
+		})
+	}
+
+	if err := mc.meetingSessionRepo.UpdateProofs(
+		meetingID,
+		&uploadedSessionProofPath,
+		&uploadedSessionAttendanceProofPath,
+		nil,
+		nil,
+	); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to update meeting session proofs",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "Session attendance proof uploaded successfully",
+	})
+}
+
+func (mc *MeetingSessionController) MentorAttend(c *fiber.Ctx) error {
+	meetingID, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid meeting session ID",
+			"error":   "ID must be a number",
+		})
+	}
+
+	userIDStr := fmt.Sprintf("%v", c.Locals("userID"))
+	userID, err := strconv.ParseInt(userIDStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Unauthorized",
+			"error":   "Invalid user ID",
+		})
+	}
+
+	if err := mc.meetingSessionRepo.VerifyAttendance(meetingID, int(userID), true); err != nil {
+		if err == sql.ErrNoRows {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "You have already attended this session or session does not exist",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Cannot verify attendance",
+			"error":   "Mentor has already attended this session or session does not exist",
+		})
+	}
+
+	mentorAttendanceProof, err := c.FormFile("session_attendance_proof")
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Cannot parse request body",
+			"error":   err.Error(),
+		})
+	} else if mentorAttendanceProof == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Mentor attendance proof image is required",
+		})
+	}
+
+	if !storage.IsValidImageExtension(mentorAttendanceProof.Filename) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid mentor attendance proof image format",
+		})
+	}
+
+	maxSize := int64(0.5 * 1024 * 1024)
+	if mentorAttendanceProof.Size > maxSize {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Mentor attendance proof image size exceeds 500KB",
+		})
+	}
+
+	mentorAttendanceRequest := new(requests.MentorAttendanceRequest)
+	if validationError, err := validator.ValidateFormData(c, mentorAttendanceRequest); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Cannot parse request body",
+			"error":   err.Error(),
+		})
+	} else if len(validationError) > 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Bad request",
+			"errors":  validationError,
+		})
+	}
+
+
+	uploadedMentorAttendanceProofPath, err := storage.UploadFileToStorage(mentorAttendanceProof, "meeting_sessions", "MEET-SESSION", nil)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to upload mentor attendance proof image",
+			"error":   err.Error(),
+		})
+	}
+
+	if err := mc.meetingSessionRepo.UpdateProofs(
+		meetingID,
+		nil,
+		nil,
+		&uploadedMentorAttendanceProofPath,
+		mentorAttendanceRequest.SessionFeedback,
+	); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to update meeting session mentor attendance proof",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "Mentor attendance proof uploaded successfully",
 	})
 }
 

@@ -2,6 +2,8 @@ package models
 
 import (
 	"database/sql"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -110,7 +112,7 @@ func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
 }
 
 func (repo *MeetingSessionRepository) GetByID(id int) (*MeetingSession, error) {
-    query := `
+	query := `
         SELECT 
             ms.id, ms.user_id, ms.mentor_id, ms.session_date, ms.session_time, 
             ms.session_duration, ms.session_type, ms.session_topic, ms.session_description,
@@ -124,32 +126,32 @@ func (repo *MeetingSessionRepository) GetByID(id int) (*MeetingSession, error) {
         WHERE ms.id = $1
     `
 
-    session := &MeetingSession{}
-    user := &User{}
-    mentor := &User{}
+	session := &MeetingSession{}
+	user := &User{}
+	mentor := &User{}
 
-    err := repo.db.QueryRow(query, id).Scan(
-        &session.ID, &session.UserID, &session.MentorID, &session.SessionDate,
-        &session.SessionTime, &session.SessionDuration, &session.SessionType,
-        &session.SessionTopic, &session.SessionDescription, &session.SessionProof,
-        &session.SessionFeedback, &session.StudentAttendanceProof,
-        &session.MentorAttendanceProof, &session.SessionStatus,
-        &session.CreatedAt, &session.UpdatedAt,
-        &user.ID, &user.Name, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt,
-        &mentor.ID, &mentor.Name, &mentor.Email, &mentor.Role, &mentor.CreatedAt, &mentor.UpdatedAt,
-    )
+	err := repo.db.QueryRow(query, id).Scan(
+		&session.ID, &session.UserID, &session.MentorID, &session.SessionDate,
+		&session.SessionTime, &session.SessionDuration, &session.SessionType,
+		&session.SessionTopic, &session.SessionDescription, &session.SessionProof,
+		&session.SessionFeedback, &session.StudentAttendanceProof,
+		&session.MentorAttendanceProof, &session.SessionStatus,
+		&session.CreatedAt, &session.UpdatedAt,
+		&user.ID, &user.Name, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+		&mentor.ID, &mentor.Name, &mentor.Email, &mentor.Role, &mentor.CreatedAt, &mentor.UpdatedAt,
+	)
 
-    if err == sql.ErrNoRows {
-        return nil, nil
-    }
-    if err != nil {
-        return nil, err
-    }
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 
-    session.User = *user
-    session.Mentor = *mentor
+	session.User = *user
+	session.Mentor = *mentor
 
-    return session, nil
+	return session, nil
 }
 
 func (repo *MeetingSessionRepository) Update(session *MeetingSession) error {
@@ -179,6 +181,45 @@ func (repo *MeetingSessionRepository) Update(session *MeetingSession) error {
 	return err
 }
 
+func (repo *MeetingSessionRepository) UpdateProofs(id int, sessionProof, studentAttendanceProof, mentorAttendanceProof, sessionFeedback *string) error {
+	setClauses := []string{}
+	args := []interface{}{}
+
+	if sessionProof != nil {
+		setClauses = append(setClauses, "session_proof = ?")
+		args = append(args, *sessionProof)
+	}
+	if studentAttendanceProof != nil {
+		setClauses = append(setClauses, "student_attendance_proof = ?")
+		args = append(args, *studentAttendanceProof)
+	}
+	if mentorAttendanceProof != nil {
+		setClauses = append(setClauses, "mentor_attendance_proof = ?")
+		args = append(args, *mentorAttendanceProof)
+	}
+	if sessionFeedback != nil {
+		setClauses = append(setClauses, "session_feedback = ?")
+		args = append(args, *sessionFeedback)
+	}
+
+	if len(setClauses) == 0 {
+		return nil
+	}
+
+	setClauses = append(setClauses, "updated_at = NOW()")
+	query := "UPDATE meeting_sessions SET " +
+		strings.Join(setClauses, ", ") +
+		" WHERE id = ?"
+	args = append(args, id)
+
+	for i := range args {
+		query = strings.Replace(query, "?", "$"+strconv.Itoa(i+1), 1)
+	}
+
+	_, err := repo.db.Exec(query, args...)
+	return err
+}
+
 func (repo *MeetingSessionRepository) UpdateStatus(id int, status string) error {
 	var updatedStatus string
 	switch status {
@@ -195,6 +236,58 @@ func (repo *MeetingSessionRepository) UpdateStatus(id int, status string) error 
 		updatedStatus, id,
 	)
 	return err
+}
+
+func (repo *MeetingSessionRepository) VerifyAttendance(id int, userId int, isMentor bool) error {
+	var column string
+	if isMentor {
+		column = "mentor_attendance_proof"
+	} else {
+		column = "student_attendance_proof"
+	}
+
+	var idColumn string
+	if isMentor {
+		idColumn = "mentor_id"
+	} else {
+		idColumn = "user_id"
+	}
+
+	query := `
+		SELECT id, student_attendance_proof, mentor_attendance_proof FROM meeting_sessions
+		WHERE id = $1 AND ` + idColumn + ` = $2 AND ` + column + ` IS NULL
+		AND session_status = 'scheduled'
+		AND session_date >= CURRENT_DATE
+		AND (
+			session_date > CURRENT_DATE OR
+			(session_date = CURRENT_DATE AND session_time >= CURRENT_TIME)
+		)
+	`
+
+	meetingSession := new(MeetingSession)
+	err := repo.db.QueryRow(query, id, userId).Scan(&meetingSession.ID, &meetingSession.StudentAttendanceProof, &meetingSession.MentorAttendanceProof)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return sql.ErrNoRows
+		}
+
+		return err
+	}
+
+	if meetingSession.ID == 0 {
+		return sql.ErrNoRows
+	}
+
+	if !isMentor && meetingSession.StudentAttendanceProof != nil {
+		return sql.ErrNoRows
+	}
+
+	if isMentor && meetingSession.MentorAttendanceProof != nil {
+		return sql.ErrNoRows
+	}
+
+	return nil
 }
 
 func (repo *MeetingSessionRepository) Delete(id int) error {

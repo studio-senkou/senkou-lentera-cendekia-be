@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"strconv"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -45,7 +46,12 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 }
 
 func (r *UserRepository) GetAll() ([]*User, error) {
-	query := `SELECT id, name, email, role, created_at, updated_at FROM users ORDER BY id`
+	query := `
+		SELECT  id, name, email, role, email_verified_at,  is_active, created_at, updated_at 
+		FROM users 
+		WHERE role NOT IN ('admin')
+		ORDER BY created_at DESC
+	`
 
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -141,8 +147,8 @@ func (r *UserRepository) GetByEmail(email string) (*User, error) {
 }
 
 func (r *UserRepository) Create(user *User) error {
-	query := `INSERT INTO users (name, email, password, created_at, updated_at) 
-			  VALUES ($1, $2, $3, NOW(), NOW()) 
+	query := `INSERT INTO users (name, email, password, role, created_at, updated_at) 
+			  VALUES ($1, $2, $3, $4, NOW(), NOW()) 
 			  RETURNING id, created_at, updated_at`
 
 	hashedPassword, err := user.HashPassword()
@@ -150,25 +156,60 @@ func (r *UserRepository) Create(user *User) error {
 		return err
 	}
 
-	err = r.db.QueryRow(query, user.Name, user.Email, hashedPassword).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
+	err = r.db.QueryRow(query, user.Name, user.Email, hashedPassword, user.Role).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
 	return err
 }
 
-func (r *UserRepository) Update(user *User) error {
-	query := `UPDATE users 
-		SET name = $1, email = $2, email_verified_at = $3, is_active = $4, updated_at = NOW() 
-		WHERE id = $5 
-		RETURNING updated_at`
+func (r *UserRepository) Update(user *User) (string, error) {
+	updatedUser, err := r.GetByID(user.ID)
+	if err != nil {
+		return "", err
+	}
 
-	err := r.db.QueryRow(
-		query,
-		user.Name,
-		user.Email,
-		user.EmailVerifiedAt,
-		user.IsActive,
-		user.ID,
-	).Scan(&user.UpdatedAt)
-	return err
+	setClauses := []string{}
+	args := []any{}
+	argIdx := 1
+
+	if user.Name != "" && user.Name != updatedUser.Name {
+		setClauses = append(setClauses, "name = $"+strconv.Itoa(argIdx))
+		args = append(args, user.Name)
+		argIdx++
+	}
+
+	emailChanged := false
+	if user.Email != "" && user.Email != updatedUser.Email {
+		setClauses = append(setClauses, "email = $"+strconv.Itoa(argIdx))
+		args = append(args, user.Email)
+		argIdx++
+		emailChanged = true
+	}
+
+	setClauses = append(setClauses, "updated_at = NOW()")
+
+	if len(setClauses) == 1 {
+		return "", nil
+	}
+
+	setClause := ""
+	for i, clause := range setClauses {
+		if i > 0 {
+			setClause += ", "
+		}
+		setClause += clause
+	}
+
+	query := `UPDATE users SET ` + setClause + ` WHERE id = $` + strconv.Itoa(argIdx) + ` RETURNING updated_at`
+	args = append(args, user.ID)
+
+	err = r.db.QueryRow(query, args...).Scan(&user.UpdatedAt)
+	if err != nil {
+		return "", err
+	}
+
+	if emailChanged {
+		return user.Email, nil
+	}
+	return "", nil
 }
 
 func (r *UserRepository) Delete(id int) error {

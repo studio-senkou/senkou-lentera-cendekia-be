@@ -11,6 +11,10 @@ type CreateMeetingSessionRequest struct {
 	Description string `json:"description" validate:"omitempty,min=3"`
 }
 
+type MentorAttendanceRequest struct {
+	SessionFeedback *string `json:"session_feedback" validate:"omitempty,min=3"`
+}
+
 type UpdateMeetingSessionRequest struct {
 	Date        string  `json:"date" validate:"omitempty"`
 	Time        string  `json:"time" validate:"omitempty"`

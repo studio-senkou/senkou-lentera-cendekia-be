@@ -87,7 +87,7 @@ func (ac *AuthController) Login(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := ac.authRepo.Create(&models.UserHasToken{
+	if err := ac.authRepo.UpdateOrCreate(&models.UserHasToken{
 		UserID: user.ID,
 		Token:  refreshToken.Token,
 	}); err != nil {

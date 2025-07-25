@@ -17,11 +17,11 @@ func NewAuthenticationRepository(db *sql.DB) *AuthenticationRepository {
 	return &AuthenticationRepository{db: db}
 }
 
-func (r *AuthenticationRepository) Create(userHasToken *UserHasToken) error {
-	query := `INSERT INTO user_has_tokens (user_id, token) VALUES ($1, $2)`
-	_, err := r.db.Exec(query, userHasToken.UserID, userHasToken.Token)
-	return err
-}
+// func (r *AuthenticationRepository) Create(userHasToken *UserHasToken) error {
+// 	query := `INSERT INTO user_has_tokens (user_id, token) VALUES ($1, $2)`
+// 	_, err := r.db.Exec(query, userHasToken.UserID, userHasToken.Token)
+// 	return err
+// }
 
 func (r *AuthenticationRepository) UpdateOrCreate(userHasToken *UserHasToken) error {
 	query := `INSERT INTO user_has_tokens (user_id, token) 
