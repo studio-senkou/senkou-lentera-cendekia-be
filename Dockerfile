@@ -15,6 +15,6 @@ RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 
 COPY --from=builder /app/main .
-COPY --from=builder /app/.env .
+COPY --from=builder /app/.env.production .env
 
 CMD ["./main"]
