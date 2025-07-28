@@ -45,6 +45,22 @@ func (r *AuthenticationRepository) ValidateSessionExist(userID int, token string
 	return exists, nil
 }
 
+func (r *AuthenticationRepository) GetTokenByUserID(userID int) (*UserHasToken, error) {
+	query := `SELECT user_id, token FROM user_has_tokens WHERE user_id = $1`
+	row := r.db.QueryRow(query, userID)
+
+	var userHasToken UserHasToken
+	err := row.Scan(&userHasToken.UserID, &userHasToken.Token)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &userHasToken, nil
+}
+
 func (r *AuthenticationRepository) InvalidateToken(userID int) error {
 	query := `DELETE FROM user_has_tokens WHERE user_id = $1`
 	_, err := r.db.Exec(query, userID)

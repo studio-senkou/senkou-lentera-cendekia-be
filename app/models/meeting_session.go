@@ -23,6 +23,8 @@ type MeetingSession struct {
 	SessionFeedback        *string   `json:"session_feedback"`
 	StudentAttendanceProof *string   `json:"student_attendance_proof"`
 	MentorAttendanceProof  *string   `json:"mentor_attendance_proof"`
+	IsStudentAttended      bool      `json:"is_student_attended"`
+	IsMentorAttended       bool      `json:"is_mentor_attended"`
 	SessionStatus          string    `json:"session_status"` // scheduled, completed, cancelled
 	CreatedAt              time.Time `json:"created_at"`
 	UpdatedAt              time.Time `json:"updated_at"`
@@ -68,7 +70,7 @@ func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
             ms.id, ms.user_id, ms.mentor_id, ms.session_date, ms.session_time, 
             ms.session_duration, ms.session_type, ms.session_topic, ms.session_description,
             ms.session_proof, ms.session_feedback, ms.student_attendance_proof,
-            ms.mentor_attendance_proof, ms.session_status, ms.created_at, ms.updated_at,
+            ms.mentor_attendance_proof, ms.session_status, ms.is_student_attended, ms.is_mentor_attended, ms.created_at, ms.updated_at,
             u.id as user_id, u.name as user_name, u.email as user_email, u.role as user_role,
             m.id as mentor_id, m.name as mentor_name, m.email as mentor_email, m.role as mentor_role
         FROM meeting_sessions ms
@@ -95,6 +97,7 @@ func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
 			&session.SessionTopic, &session.SessionDescription, &session.SessionProof,
 			&session.SessionFeedback, &session.StudentAttendanceProof,
 			&session.MentorAttendanceProof, &session.SessionStatus,
+			&session.IsStudentAttended, &session.IsMentorAttended,
 			&session.CreatedAt, &session.UpdatedAt,
 			&user.ID, &user.Name, &user.Email, &user.Role,
 			&mentor.ID, &mentor.Name, &mentor.Email, &mentor.Role,
@@ -117,7 +120,7 @@ func (repo *MeetingSessionRepository) GetByID(id int) (*MeetingSession, error) {
             ms.id, ms.user_id, ms.mentor_id, ms.session_date, ms.session_time, 
             ms.session_duration, ms.session_type, ms.session_topic, ms.session_description,
             ms.session_proof, ms.session_feedback, ms.student_attendance_proof,
-            ms.mentor_attendance_proof, ms.session_status, ms.created_at, ms.updated_at,
+            ms.mentor_attendance_proof, ms.session_status, ms.is_student_attended, ms.is_mentor_attended, ms.created_at, ms.updated_at,
             u.id, u.name, u.email, u.role, u.created_at, u.updated_at,
             m.id, m.name, m.email, m.role, m.created_at, m.updated_at
         FROM meeting_sessions ms
@@ -136,6 +139,7 @@ func (repo *MeetingSessionRepository) GetByID(id int) (*MeetingSession, error) {
 		&session.SessionTopic, &session.SessionDescription, &session.SessionProof,
 		&session.SessionFeedback, &session.StudentAttendanceProof,
 		&session.MentorAttendanceProof, &session.SessionStatus,
+		&session.IsStudentAttended, &session.IsMentorAttended,
 		&session.CreatedAt, &session.UpdatedAt,
 		&user.ID, &user.Name, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 		&mentor.ID, &mentor.Name, &mentor.Email, &mentor.Role, &mentor.CreatedAt, &mentor.UpdatedAt,
@@ -152,6 +156,57 @@ func (repo *MeetingSessionRepository) GetByID(id int) (*MeetingSession, error) {
 	session.Mentor = *mentor
 
 	return session, nil
+}
+
+func (repo *MeetingSessionRepository) GetByUser(userID int) ([]*MeetingSession, error) {
+	query := `
+		SELECT 
+			ms.id, ms.user_id, ms.mentor_id, ms.session_date, ms.session_time, 
+			ms.session_duration, ms.session_type, ms.session_topic, ms.session_description,
+			ms.session_proof, ms.session_feedback, ms.student_attendance_proof,
+			ms.mentor_attendance_proof, ms.session_status, ms.is_student_attended, ms.is_mentor_attended, ms.created_at, ms.updated_at,
+			u.id as user_id, u.name as user_name, u.email as user_email, u.role as user_role,
+			m.id as mentor_id, m.name as mentor_name, m.email as mentor_email, m.role as mentor_role
+		FROM meeting_sessions ms
+		LEFT JOIN users u ON ms.user_id = u.id
+		LEFT JOIN users m ON ms.mentor_id = m.id
+		WHERE (u.id = $1 OR m.id = $1)
+		ORDER BY ms.created_at DESC
+	`
+
+	rows, err := repo.db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sessions := make([]*MeetingSession, 0)
+	for rows.Next() {
+		session := &MeetingSession{}
+		user := &User{}
+		mentor := &User{}
+
+		err := rows.Scan(
+			&session.ID, &session.UserID, &session.MentorID, &session.SessionDate,
+			&session.SessionTime, &session.SessionDuration, &session.SessionType,
+			&session.SessionTopic, &session.SessionDescription, &session.SessionProof,
+			&session.SessionFeedback, &session.StudentAttendanceProof,
+			&session.MentorAttendanceProof, &session.SessionStatus,
+			&session.IsStudentAttended, &session.IsMentorAttended,
+			&session.CreatedAt, &session.UpdatedAt,
+			&user.ID, &user.Name, &user.Email, &user.Role,
+			&mentor.ID, &mentor.Name, &mentor.Email, &mentor.Role,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		session.User = *user
+		session.Mentor = *mentor
+		sessions = append(sessions, session)
+	}
+
+	return sessions, nil
 }
 
 func (repo *MeetingSessionRepository) Update(session *MeetingSession) error {
@@ -193,6 +248,9 @@ func (repo *MeetingSessionRepository) UpdateProofs(id int, sessionProof, student
 		setClauses = append(setClauses, "student_attendance_proof = ?")
 		args = append(args, *studentAttendanceProof)
 	}
+	if sessionProof != nil || studentAttendanceProof != nil {
+		setClauses = append(setClauses, "is_student_attended = TRUE")
+	}
 	if mentorAttendanceProof != nil {
 		setClauses = append(setClauses, "mentor_attendance_proof = ?")
 		args = append(args, *mentorAttendanceProof)
@@ -200,6 +258,9 @@ func (repo *MeetingSessionRepository) UpdateProofs(id int, sessionProof, student
 	if sessionFeedback != nil {
 		setClauses = append(setClauses, "session_feedback = ?")
 		args = append(args, *sessionFeedback)
+	}
+	if sessionFeedback != nil || mentorAttendanceProof != nil {
+		setClauses = append(setClauses, "is_mentor_attended = TRUE")
 	}
 
 	if len(setClauses) == 0 {

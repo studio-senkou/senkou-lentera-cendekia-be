@@ -12,6 +12,8 @@ CREATE TABLE meeting_sessions (
     session_feedback TEXT,
     student_attendance_proof TEXT,
     mentor_attendance_proof TEXT,
+    is_student_attended BOOLEAN NOT NULL DEFAULT FALSE,
+    is_mentor_attended BOOLEAN NOT NULL DEFAULT FALSE,
     session_status VARCHAR(50) NOT NULL DEFAULT 'scheduled',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

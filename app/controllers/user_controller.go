@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"database/sql"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -9,19 +10,26 @@ import (
 	"github.com/studio-senkou/lentera-cendekia-be/app/models"
 	"github.com/studio-senkou/lentera-cendekia-be/app/requests"
 	"github.com/studio-senkou/lentera-cendekia-be/database"
+	"github.com/studio-senkou/lentera-cendekia-be/utils/app"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/auth"
 	gomail "github.com/studio-senkou/lentera-cendekia-be/utils/mail"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/validator"
 )
 
 type UserController struct {
-	userRepo *models.UserRepository
+	jwtManager 	*auth.JwtManager
+	userRepo 	*models.UserRepository
+	authRepo 	*models.AuthenticationRepository
 }
 
 func NewUserController() *UserController {
 	db := database.GetDB()
+	authSecret := app.GetEnv("AUTH_SECRET", "")
+
 	return &UserController{
+		jwtManager: auth.NewJwtManager(authSecret),
 		userRepo: models.NewUserRepository(db),
+		authRepo: models.NewAuthenticationRepository(db),
 	}
 }
 
@@ -49,8 +57,8 @@ func (uc *UserController) CreateUser(c *fiber.Ctx, role string) error {
 	}
 
 	user := &models.User{
-		Name:  createUserRequest.Name,
-		Email: createUserRequest.Email,
+		Name:     createUserRequest.Name,
+		Email:    createUserRequest.Email,
 		Password: "12345678",
 		Role:     role,
 	}
@@ -74,7 +82,7 @@ func (uc *UserController) CreateUser(c *fiber.Ctx, role string) error {
 		"templates/emails/welcome.html",
 		fiber.Map{
 			"Name":           user.Name,
-			"ActivationLink": "https://portal.lenteracendekia.id/activate?token=" + activationToken.Token,
+			"ActivationLink": fmt.Sprintf("%s/activate?token=%s", app.GetEnv("APP_FE_URL", "http://localhost:3000"), activationToken.Token),
 		},
 	)
 	if err != nil {
@@ -117,7 +125,6 @@ func (uc *UserController) ActivateUser(c *fiber.Ctx) error {
 		})
 	}
 
-	// Get user
 	user, err := uc.userRepo.GetByID(oneTimeToken.UserID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -154,6 +161,90 @@ func (uc *UserController) ActivateUser(c *fiber.Ctx) error {
 		})
 	}
 
+	if err := uc.userRepo.UpdatePassword(user.ID, activationRequest.Password); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to set user password",
+			"error":   "Failed to set user password: " + err.Error(),
+		})
+	}
+
+	// Authenticate the user after activation
+	accessToken, err := uc.jwtManager.GenerateToken(auth.Payload{
+		UserID: user.ID,
+		Role: user.Role,
+	}, time.Now().Add(24*time.Hour))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to generate access token",
+			"error":   "Failed to generate access token: " + err.Error(),
+		})
+	}
+
+	refreshToken, err := uc.jwtManager.GenerateToken(auth.Payload{
+		UserID: user.ID,
+		Role: user.Role,
+	}, time.Now().Add(30*24*time.Hour))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to generate refresh token",
+			"error":   "Failed to generate refresh token: " + err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "User activated successfully",
+		"data": fiber.Map{
+			"active_role": user.Role,
+			"access_token": accessToken.Token,
+			"access_token_expiry": accessToken.ExpiresAt,
+			"refresh_token": refreshToken.Token,
+			"refresh_token_expiry": refreshToken.ExpiresAt,
+		},
+	})
+}
+
+func (uc *UserController) ForceActivateUser(c *fiber.Ctx) error {
+	userID, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid user ID",
+		})
+	}
+
+	user, err := uc.userRepo.GetByID(userID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to retrieve user",
+		})
+	}
+
+	if user == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "User not found",
+		})
+	}
+
+	if user.IsEmailVerified() && user.IsActive {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "User already activated",
+			"error":   "User email is already verified and active",
+		})
+	}
+
+	user.MarkEmailAsVerified()
+	user.MarkAsActive()
+
+	if _, err := uc.userRepo.Update(user); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to activate user",
+		})
+	}
+
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  "success",
 		"message": "User activated successfully",
@@ -163,6 +254,7 @@ func (uc *UserController) ActivateUser(c *fiber.Ctx) error {
 func (uc *UserController) GetAllUsers(c *fiber.Ctx) error {
 	users, err := uc.userRepo.GetAll()
 	if err != nil {
+		fmt.Println("Error retrieving users:", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to retrieve users",
 		})
@@ -195,6 +287,43 @@ func (uc *UserController) GetUser(c *fiber.Ctx) error {
 	if user == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "User not found",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":  "success",
+		"message": "Successfully retrieved user",
+		"data": fiber.Map{
+			"user": user,
+		},
+	})
+}
+
+func (uc *UserController) GetUserMe(c *fiber.Ctx) error {
+	userIDStr := fmt.Sprintf("%v", c.Locals("userID"))
+	userID, err := strconv.ParseInt(userIDStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Unauthorized",
+			"error":   "Invalid user ID",
+		})
+	}
+
+	user, err := uc.userRepo.GetByID(int(userID))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to retrieve user",
+			"error":   "Failed to retrieve user: " + err.Error(),
+		})
+	}
+
+	if user == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "User not found",
+			"error":   "User not found",
 		})
 	}
 
@@ -283,7 +412,7 @@ func (uc *UserController) UpdateUser(c *fiber.Ctx) error {
 	user.Name = updateUserRequest.Name
 	user.Email = updateUserRequest.Email
 
-	updatedEmail, err := uc.userRepo.Update(user);
+	updatedEmail, err := uc.userRepo.Update(user)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to update user",
@@ -304,7 +433,7 @@ func (uc *UserController) UpdateUser(c *fiber.Ctx) error {
 			"templates/emails/email_change_verification.html",
 			fiber.Map{
 				"Name":           user.Name,
-				"ActivationLink": "https://portal.lenteracendekia.id/activate?token=" + activationToken.Token,
+				"ActivationLink": fmt.Sprintf("%s/verify?token=%s", app.GetEnv("APP_FE_URL", "http://localhost:3000"), activationToken.Token),
 			},
 		)
 		if err != nil {
@@ -322,6 +451,166 @@ func (uc *UserController) UpdateUser(c *fiber.Ctx) error {
 		"data": fiber.Map{
 			"user": user,
 		},
+	})
+}
+
+func (uc *UserController) ResetPassword(c *fiber.Ctx) error {
+	resetPasswordRequest := new(requests.ResetPasswordRequest)
+	if validationError, err := validator.ValidateRequest(c, resetPasswordRequest); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Cannot parse request body",
+			"error":   err.Error(),
+		})
+	} else if len(validationError) > 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"errors":  validationError,
+		})
+	}
+
+	user, err := uc.userRepo.GetByEmail(resetPasswordRequest.Email)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to retrieve user",
+			"error":   "Failed to retrieve user: " + err.Error(),
+		})
+	} else if user == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "User not found",
+			"error":   "User not found",
+		})
+	}
+
+	if !user.IsEmailVerified() {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Email not verified",
+			"error":   "User email is not verified",
+		})
+	}
+
+	resetToken, err := auth.GenerateOneTimeToken(user.ID, "password_reset", 15*time.Minute)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to generate reset token",
+			"error":   "Failed to generate reset token: " + err.Error(),
+		})
+	}
+
+	email, err := gomail.NewMailFromTemplate(
+		user.Email,
+		fmt.Sprintf("Reset Password for %s", user.Name),
+		"templates/emails/reset_password.html",
+		fiber.Map{
+			"Name":           user.Name,
+			"ResetLink": fmt.Sprintf("%s/reset-password?token=%s", app.GetEnv("APP_FE_URL", "http://localhost:3000"), resetToken.Token),
+			"ExpiryTime": resetToken.ExpiresAt.Format(time.RFC1123),
+		},
+	)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to generate email from template",
+			"error":   "Failed to generate email from template: " + err.Error(),
+		})
+	}
+	email.Send()
+
+	return c.JSON(fiber.Map{
+		"status":  "success",
+		"message": "Password reset email sent successfully",
+	})
+}
+
+func (uc *UserController) UpdatePasswordByToken(c *fiber.Ctx) error {
+	updatePasswordRequest := new(requests.UpdatePasswordRequest)
+	if validationError, err := validator.ValidateRequest(c, updatePasswordRequest); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Cannot parse request body",
+			"error":   err.Error(),
+		})
+	} else if len(validationError) > 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"errors":  validationError,
+		})
+	}
+
+	oneTimeToken, err := auth.ValidateOneTimeToken(updatePasswordRequest.Token, "password_reset")
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid password reset token",
+			"error":   err.Error(),
+		})
+	}
+
+	if err := uc.userRepo.UpdatePassword(oneTimeToken.UserID, updatePasswordRequest.NewPassword); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Failed to update password",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":  "success",
+		"message": "Password updated successfully",
+	})
+}
+
+func (uc *UserController) UpdateUserPassword(c *fiber.Ctx) error {
+	userIDStr := fmt.Sprintf("%v", c.Locals("userID"))
+	userID, err := strconv.ParseInt(userIDStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Unauthorized",
+			"error":   "Invalid user ID",
+		})
+	}
+
+	updatePasswordRequest := new(requests.UpdateUserPasswordRequest)
+	if validationError, err := validator.ValidateRequest(c, updatePasswordRequest); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Cannot parse request body",
+			"error":   err.Error(),
+		})
+	} else if len(validationError) > 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"errors":  validationError,
+		})
+	}
+
+	if isMatch, err := uc.userRepo.VerifyOldPassword(int(userID), updatePasswordRequest.OldPassword); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Failed to verify old password",
+			"error":   err.Error(),
+		})
+	} else if !isMatch {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Old password is incorrect",
+			"error":   "Old password does not match",
+		})
+	}
+
+	if err := uc.userRepo.UpdatePassword(int(userID), updatePasswordRequest.NewPassword); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Failed to update password",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":  "success",
+		"message": "Password updated successfully",
 	})
 }
 

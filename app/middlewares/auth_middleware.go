@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/studio-senkou/lentera-cendekia-be/app/models"
+	"github.com/studio-senkou/lentera-cendekia-be/database"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/app"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/auth"
 )
@@ -16,6 +18,9 @@ func init() {
 }
 
 func AuthMiddleware() fiber.Handler {
+	db := database.GetDB()
+	authRepository := models.NewAuthenticationRepository(db)
+
 	return func(c *fiber.Ctx) error {
 		token := c.Get("Authorization")
 		if token == "" {
@@ -79,6 +84,14 @@ func AuthMiddleware() fiber.Handler {
 				"status":  "fail",
 				"message": "Invalid role in token",
 				"error":   "Invalid role",
+			})
+		}
+
+		if session, err := authRepository.GetTokenByUserID(userID); err != nil || session == nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "Invalid session",
+				"error":   err.Error(),
 			})
 		}
 

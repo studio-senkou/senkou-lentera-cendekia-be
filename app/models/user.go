@@ -2,7 +2,9 @@ package models
 
 import (
 	"database/sql"
+	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -37,6 +39,10 @@ func (u *User) MarkEmailAsVerified() {
 	u.EmailVerifiedAt = &now
 }
 
+func (u *User) MarkAsActive() {
+	u.IsActive = true
+}
+
 type UserRepository struct {
 	db *sql.DB
 }
@@ -62,7 +68,7 @@ func (r *UserRepository) GetAll() ([]*User, error) {
 	users := make([]*User, 0)
 	for rows.Next() {
 		var user User
-		err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+		err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.Role, &user.EmailVerifiedAt, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -117,10 +123,10 @@ func (r *UserRepository) GetMentorDropdown() ([]*User, error) {
 }
 
 func (r *UserRepository) GetByID(id int) (*User, error) {
-	query := `SELECT id, name, email, created_at, updated_at FROM users WHERE id = $1`
+	query := `SELECT id, name, email, role, email_verified_at, is_active, created_at, updated_at FROM users WHERE id = $1`
 
 	user := new(User)
-	err := r.db.QueryRow(query, id).Scan(&user.ID, &user.Name, &user.Email, &user.CreatedAt, &user.UpdatedAt)
+	err := r.db.QueryRow(query, id).Scan(&user.ID, &user.Name, &user.Email, &user.Role, &user.EmailVerifiedAt, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -132,14 +138,11 @@ func (r *UserRepository) GetByID(id int) (*User, error) {
 }
 
 func (r *UserRepository) GetByEmail(email string) (*User, error) {
-	query := `SELECT id, name, email, password, role, created_at, updated_at FROM users WHERE email = $1`
+	query := `SELECT id, name, email, password, role, email_verified_at, is_active, created_at, updated_at FROM users WHERE email = $1`
 
 	user := new(User)
-	err := r.db.QueryRow(query, email).Scan(&user.ID, &user.Name, &user.Email, &user.Password, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+	err := r.db.QueryRow(query, email).Scan(&user.ID, &user.Name, &user.Email, &user.Password, &user.Role, &user.EmailVerifiedAt, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
 		return nil, err
 	}
 
@@ -161,27 +164,38 @@ func (r *UserRepository) Create(user *User) error {
 }
 
 func (r *UserRepository) Update(user *User) (string, error) {
-	updatedUser, err := r.GetByID(user.ID)
+	current, err := r.GetByID(user.ID)
 	if err != nil {
 		return "", err
 	}
 
-	setClauses := []string{}
-	args := []any{}
-	argIdx := 1
+	var (
+		setClauses []string
+		args       []any
+		argIdx     = 1
+		emailChanged bool
+	)
 
-	if user.Name != "" && user.Name != updatedUser.Name {
+	if user.Name != "" && user.Name != current.Name {
 		setClauses = append(setClauses, "name = $"+strconv.Itoa(argIdx))
 		args = append(args, user.Name)
 		argIdx++
 	}
-
-	emailChanged := false
-	if user.Email != "" && user.Email != updatedUser.Email {
+	if user.Email != "" && user.Email != current.Email {
 		setClauses = append(setClauses, "email = $"+strconv.Itoa(argIdx))
 		args = append(args, user.Email)
 		argIdx++
 		emailChanged = true
+	}
+	if user.EmailVerifiedAt != nil && current.EmailVerifiedAt == nil {
+		setClauses = append(setClauses, "email_verified_at = $"+strconv.Itoa(argIdx))
+		args = append(args, user.EmailVerifiedAt)
+		argIdx++
+	}
+	if user.IsActive != current.IsActive {
+		setClauses = append(setClauses, "is_active = $"+strconv.Itoa(argIdx))
+		args = append(args, user.IsActive)
+		argIdx++
 	}
 
 	setClauses = append(setClauses, "updated_at = NOW()")
@@ -190,16 +204,11 @@ func (r *UserRepository) Update(user *User) (string, error) {
 		return "", nil
 	}
 
-	setClause := ""
-	for i, clause := range setClauses {
-		if i > 0 {
-			setClause += ", "
-		}
-		setClause += clause
-	}
-
+	setClause := strings.Join(setClauses, ", ")
 	query := `UPDATE users SET ` + setClause + ` WHERE id = $` + strconv.Itoa(argIdx) + ` RETURNING updated_at`
 	args = append(args, user.ID)
+
+	fmt.Println("Executing query:", query, "with args:", args)
 
 	err = r.db.QueryRow(query, args...).Scan(&user.UpdatedAt)
 	if err != nil {
@@ -210,6 +219,51 @@ func (r *UserRepository) Update(user *User) (string, error) {
 		return user.Email, nil
 	}
 	return "", nil
+}
+
+func (r *UserRepository) UpdatePassword(id int, newPassword string) error {
+	query := `UPDATE users SET password = $1, updated_at = NOW() WHERE id = $2`
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	result, err := r.db.Exec(query, hashedPassword, id)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (r *UserRepository) VerifyOldPassword(id int, oldPassword string) (bool, error) {
+	query := `SELECT password FROM users WHERE id = $1`
+
+	var hashedPassword string
+	err := r.db.QueryRow(query, id).Scan(&hashedPassword)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(oldPassword))
+	if err != nil {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 func (r *UserRepository) Delete(id int) error {

@@ -90,6 +90,35 @@ func (mc *MeetingSessionController) GetMeetingSession(c *fiber.Ctx) error {
 	})
 }
 
+func (mc *MeetingSessionController) GetUserMeetingSession(c *fiber.Ctx) error {
+	userIDStr := fmt.Sprintf("%v", c.Locals("userID"))
+	userID, err := strconv.ParseInt(userIDStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Unauthorized",
+			"error":   "Invalid user ID",
+		})
+	}
+
+	sessions, err := mc.meetingSessionRepo.GetByUser(int(userID))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to retrieve meeting sessions for user",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "Meeting sessions retrieved successfully",
+		"data": fiber.Map{
+			"sessions": sessions,
+		},
+	})
+}
+
 func (mc *MeetingSessionController) GetMeetingSessionByID(c *fiber.Ctx) error {
 	meetingID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
