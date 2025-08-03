@@ -1,6 +1,9 @@
 package controllers
 
 import (
+	"fmt"
+	"strconv"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/studio-senkou/lentera-cendekia-be/app/models"
 	"github.com/studio-senkou/lentera-cendekia-be/app/requests"
@@ -20,6 +23,16 @@ func NewBlogController() *BlogController {
 }
 
 func (bc *BlogController) CreateBlog(c *fiber.Ctx) error {
+	userIDStr := fmt.Sprintf("%v", c.Locals("userID"))
+	userID, err := strconv.ParseInt(userIDStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Unauthorized",
+			"error":   "Invalid user ID",
+		})
+	}
+	
 	createBlogRequest := new(requests.CreateBlogRequest)
 	if validatorErrors, err := validator.ValidateRequest(c, createBlogRequest); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -36,7 +49,7 @@ func (bc *BlogController) CreateBlog(c *fiber.Ctx) error {
 	newBlog := &models.Blog{
 		Title:    createBlogRequest.Title,
 		Content:  createBlogRequest.Content,
-		AuthorID: createBlogRequest.AuthorID,
+		AuthorID: int(userID),
 	}
 
 	if err := bc.blogRepository.Create(newBlog); err != nil {
@@ -63,6 +76,7 @@ func (bc *BlogController) GetAllBlogs(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"status": "success",
+		"message": "Blogs retrieved successfully",
 		"data":   blogs,
 	})
 }

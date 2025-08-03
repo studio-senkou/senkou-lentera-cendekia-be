@@ -9,9 +9,9 @@ import (
 func SetupBlogRoutes(router fiber.Router) {
 	blogController := controllers.NewBlogController()
 
-	router.Post("/blogs", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("mentor"), blogController.CreateBlog)
+	router.Post("/blogs", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("mentor", "admin"), blogController.CreateBlog)
 	router.Get("/blogs", blogController.GetAllBlogs)
 	router.Get("/blogs/:id", blogController.GetBlogByID)
-	router.Put("/blogs/:id", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("mentor"), blogController.UpdateBlog)
-	router.Delete("/blogs/:id", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("mentor"), blogController.DeleteBlog)
+	router.Put("/blogs/:id", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("mentor", "admin"), blogController.UpdateBlog)
+	router.Delete("/blogs/:id", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("mentor", "admin"), blogController.DeleteBlog)
 }

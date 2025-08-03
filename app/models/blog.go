@@ -24,7 +24,7 @@ func NewBlogRepository(db *sql.DB) *BlogRepository {
 func (r *BlogRepository) Create(blog *Blog) error {
 	query := `
 		INSERT INTO blogs (title, content, author_id, created_at, updated_at)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		RETURNING id, created_at, updated_at`
 
 	err := r.db.QueryRow(query, blog.Title, blog.Content, blog.AuthorID).Scan(&blog.ID, &blog.CreatedAt, &blog.UpdatedAt)
@@ -39,7 +39,7 @@ func (r *BlogRepository) GetByID(id int) (*Blog, error) {
 	query := `
 		SELECT id, title, content, author_id, created_at, updated_at, deleted_at
 		FROM blogs
-		WHERE id = ? AND deleted_at IS NULL`
+		WHERE id = $1 AND deleted_at IS NULL`
 
 	blog := &Blog{}
 	err := r.db.QueryRow(query, id).Scan(&blog.ID, &blog.Title, &blog.Content, &blog.AuthorID, &blog.CreatedAt, &blog.UpdatedAt, &blog.DeletedAt)
@@ -55,10 +55,13 @@ func (r *BlogRepository) GetByID(id int) (*Blog, error) {
 
 func (r *BlogRepository) GetAll() ([]*Blog, error) {
 	query := `
-		SELECT id, title, content, author_id, created_at, updated_at, deleted_at
-		FROM blogs
-		WHERE deleted_at IS NULL
-		ORDER BY created_at DESC`
+		SELECT 
+			b.id, b.title, b.content, b.author_id, b.created_at, b.updated_at, b.deleted_at,
+			u.id, u.name, u.email, u.role, u.is_active, u.created_at, u.updated_at
+		FROM blogs b
+		INNER JOIN users u ON b.author_id = u.id
+		WHERE b.deleted_at IS NULL
+		ORDER BY b.created_at DESC`
 
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -69,7 +72,22 @@ func (r *BlogRepository) GetAll() ([]*Blog, error) {
 	var blogs []*Blog
 	for rows.Next() {
 		blog := &Blog{}
-		if err := rows.Scan(&blog.ID, &blog.Title, &blog.Content, &blog.AuthorID, &blog.CreatedAt, &blog.UpdatedAt, &blog.DeletedAt); err != nil {
+		if err := rows.Scan(
+			&blog.ID,
+			&blog.Title,
+			&blog.Content,
+			&blog.AuthorID,
+			&blog.CreatedAt,
+			&blog.UpdatedAt,
+			&blog.DeletedAt,
+			&blog.Author.ID,
+			&blog.Author.Name,
+			&blog.Author.Email,
+			&blog.Author.Role,
+			&blog.Author.IsActive,
+			&blog.Author.CreatedAt,
+			&blog.Author.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		blogs = append(blogs, blog)
@@ -81,8 +99,8 @@ func (r *BlogRepository) GetAll() ([]*Blog, error) {
 func (r *BlogRepository) Update(blog *Blog) error {
 	query := `
 		UPDATE blogs
-		SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ? AND deleted_at IS NULL`
+		SET title = $1, content = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $3 AND deleted_at IS NULL`
 
 	result, err := r.db.Exec(query, blog.Title, blog.Content, blog.ID)
 	if err != nil {
@@ -105,7 +123,7 @@ func (r *BlogRepository) Delete(id int) error {
 	query := `
 		UPDATE blogs
 		SET deleted_at = CURRENT_TIMESTAMP
-		WHERE id = ? AND deleted_at IS NULL`
+		WHERE id = $1 AND deleted_at IS NULL`
 
 	result, err := r.db.Exec(query, id)
 	if err != nil {
@@ -127,7 +145,7 @@ func (r *BlogRepository) Restore(id int) error {
 	query := `
 		UPDATE blogs
 		SET deleted_at = NULL
-		WHERE id = ? AND deleted_at IS NOT NULL`
+		WHERE id = $1 AND deleted_at IS NOT NULL`
 
 	result, err := r.db.Exec(query, id)
 	if err != nil {
