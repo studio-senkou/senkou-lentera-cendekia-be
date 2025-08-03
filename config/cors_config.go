@@ -7,7 +7,7 @@ import (
 
 func NewCORSConfig() fiber.Handler {
 	return cors.New(cors.Config{
-		AllowOrigins:     "https://portal.lenteracendekia.id,https://trialportal.lenteracendekia.id,http://localhost:3000,http://localhost:3001,http://localhost:3002",
+		AllowOrigins:     "https://portal.lenteracendekia.id,https://dashboard.lenteracendekia.id,http://localhost:3000,http://localhost:3001,http://localhost:3002",
 		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Requested-With",
 		AllowCredentials: true,
