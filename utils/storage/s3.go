@@ -106,3 +106,14 @@ func (s *UploadService) UploadFile(ctx context.Context, file *multipart.FileHead
 
 	return key, nil
 }
+
+func (s *UploadService) RemoveFile(ctx context.Context, path string) error {
+	_, err := s.storage.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(path),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to remove file: %w", err)
+	}
+	return nil
+}

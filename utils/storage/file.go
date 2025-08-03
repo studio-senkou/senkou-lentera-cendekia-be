@@ -82,3 +82,13 @@ func UploadFileToStorage(file *multipart.FileHeader, storagePath, prefix string,
 
 	return uploadedPath, nil
 }
+
+func RemoveFileFromStorage(path string) error {
+	ctx := context.Background()
+	uploader := NewUploadService()
+	err := uploader.RemoveFile(ctx, path)
+	if err != nil {
+		return fmt.Errorf("failed to remove file: %w", err)
+	}
+	return nil
+}
