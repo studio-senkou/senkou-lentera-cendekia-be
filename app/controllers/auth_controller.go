@@ -58,7 +58,7 @@ func (ac *AuthController) Login(c *fiber.Ctx, isAdmin bool) error {
 	}
 
 	user, err := ac.userRepo.GetByEmail(loginRequest.Email)
-	if user.Role != "admin" && isAdmin {
+	if user != nil && user.Role != "admin" && isAdmin {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Access denied",
@@ -127,7 +127,7 @@ func (ac *AuthController) Login(c *fiber.Ctx, isAdmin bool) error {
 		"status":  "success",
 		"message": "Login successful",
 		"data": fiber.Map{
-			"active_role": 		 	user.Role,
+			"active_role":          user.Role,
 			"access_token":         accessToken.Token,
 			"access_token_expiry":  accessToken.ExpiresAt,
 			"refresh_token":        refreshToken.Token,
@@ -152,7 +152,7 @@ func (ac *AuthController) VerifyAccount(c *fiber.Ctx) error {
 		})
 	}
 
-	user, err := ac.userRepo.GetByEmail(verifyAccountRequest.Email);
+	user, err := ac.userRepo.GetByEmail(verifyAccountRequest.Email)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"status":  "fail",
@@ -311,7 +311,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 		"status":  "success",
 		"message": "Successfully refreshed token",
 		"data": fiber.Map{
-			"active_role": 		 	newPayload.Role,
+			"active_role":          newPayload.Role,
 			"access_token":         newAccessToken.Token,
 			"access_token_expiry":  newAccessToken.ExpiresAt,
 			"refresh_token":        newRefreshToken.Token,
