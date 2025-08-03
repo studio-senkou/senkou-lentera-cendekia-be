@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/studio-senkou/lentera-cendekia-be/app/models"
 	"github.com/studio-senkou/lentera-cendekia-be/database"
@@ -13,9 +14,9 @@ func main() {
 		panic(fmt.Sprintf("Failed to initialize database: %v", err))
 	}
 	defer database.CloseDatabase()
-	
+
 	db := database.GetDB()
-	
+
 	if err := Seed(db); err != nil {
 		panic(err)
 	}
@@ -25,18 +26,19 @@ func main() {
 
 func Seed(db *sql.DB) error {
 	userRepository := models.NewUserRepository(db)
-	
+
 	administrator := &models.User{
 		Name:            "Studio Senkou",
 		Email:           "studio.senkou@gmail.com",
 		Password:        "12345678",
 		Role:            "admin",
+		EmailVerifiedAt: func() *time.Time { t := time.Now(); return &t }(),
 		IsActive:        true,
 	}
 
 	if err := userRepository.Create(administrator); err != nil {
 		return fmt.Errorf("failed to create administrator user: %w", err)
 	}
-	
+
 	return nil
 }
