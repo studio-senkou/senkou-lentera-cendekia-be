@@ -1,4 +1,4 @@
-.PHONY=migrate-up migrate-down generate-app-key create-migration migrate-fresh seed rebuild-prod rebuild-dev
+.PHONY=migrate-up migrate-up-force migrate-down generate-app-key create-migration migrate-fresh seed rebuild-prod rebuild-dev
 
 # Comment if want to rebuild docker containers to remove collision with environment variables
 # ifneq (,$(wildcard ./.env))
@@ -66,7 +66,7 @@ rebuild-prod:
 	@echo "Rebuild completed."
 	
 rebuild-dev:
-	@docker compose -f docker-compose.dev.yml -p senkou-lentera-cendekia-api down --remove-orphans
-	@docker compose -f docker-compose.dev.yml -p senkou-lentera-cendekia-api build --no-cache
-	@docker compose -f docker-compose.dev.yml -p senkou-lentera-cendekia-api up -d --force-recreate
+	@docker compose -f docker-compose.dev.yml -p senkou-lentera-cendekia-api-dev down --remove-orphans
+	@docker compose -f docker-compose.dev.yml -p senkou-lentera-cendekia-api-dev build --no-cache
+	@docker compose -f docker-compose.dev.yml -p senkou-lentera-cendekia-api-dev up -d --force-recreate
 	@echo "Rebuild for development completed."
