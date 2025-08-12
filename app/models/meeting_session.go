@@ -2,10 +2,63 @@ package models
 
 import (
 	"database/sql"
+	"database/sql/driver"
+	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
 )
+
+type TimeOnly time.Time
+
+func (t TimeOnly) MarshalJSON() ([]byte, error) {
+	timeStr := time.Time(t).Format("15:04:05")
+	return []byte(`"` + timeStr + `"`), nil
+}
+
+func (t *TimeOnly) UnmarshalJSON(data []byte) error {
+	str := strings.Trim(string(data), `"`)
+	parsedTime, err := time.Parse("15:04:05", str)
+	if err != nil {
+		parsedTime, err = time.Parse("15:04", str)
+		if err != nil {
+			return err
+		}
+	}
+	*t = TimeOnly(parsedTime)
+	return nil
+}
+
+func (t *TimeOnly) Scan(value interface{}) error {
+	switch v := value.(type) {
+	case time.Time:
+		*t = TimeOnly(v)
+		return nil
+	case []byte:
+		parsedTime, err := time.Parse("15:04:05", string(v))
+		if err != nil {
+			return err
+		}
+		*t = TimeOnly(parsedTime)
+		return nil
+	case string:
+		parsedTime, err := time.Parse("15:04:05", v)
+		if err != nil {
+			return err
+		}
+		*t = TimeOnly(parsedTime)
+		return nil
+	case nil:
+		return nil
+	default:
+		return fmt.Errorf("cannot scan %T into TimeOnly", value)
+	}
+}
+
+func (t TimeOnly) Value() (driver.Value, error) {
+	return time.Time(t).Format("15:04:05"), nil
+}
 
 type MeetingSession struct {
 	ID                     int       `json:"id"`
@@ -14,7 +67,7 @@ type MeetingSession struct {
 	User                   User      `json:"student"`
 	Mentor                 User      `json:"mentor"`
 	SessionDate            string    `json:"session_date"`
-	SessionTime            string    `json:"session_time"`
+	SessionTime            TimeOnly  `json:"session_time"`
 	SessionDuration        int       `json:"session_duration"` // Duration in minutes
 	SessionType            string    `json:"session_type"`
 	SessionTopic           string    `json:"session_topic"`
@@ -67,7 +120,8 @@ func (repo *MeetingSessionRepository) Create(session *MeetingSession) error {
 func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
 	query := `
         SELECT 
-            ms.id, ms.user_id, ms.mentor_id, ms.session_date, ms.session_time, 
+            ms.id, ms.user_id, ms.mentor_id, ms.session_date, 
+            ms.session_time::text as session_time,  -- ✅ Cast to text
             ms.session_duration, ms.session_type, ms.session_topic, ms.session_description,
             ms.session_proof, ms.session_feedback, ms.student_attendance_proof,
             ms.mentor_attendance_proof, ms.session_status, ms.is_student_attended, ms.is_mentor_attended, ms.created_at, ms.updated_at,
@@ -91,9 +145,12 @@ func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
 		user := &User{}
 		mentor := &User{}
 
+		// ✅ Scan as string instead of TimeOnly
+		var sessionTimeStr string
+
 		err := rows.Scan(
 			&session.ID, &session.UserID, &session.MentorID, &session.SessionDate,
-			&session.SessionTime, &session.SessionDuration, &session.SessionType,
+			&sessionTimeStr, &session.SessionDuration, &session.SessionType,
 			&session.SessionTopic, &session.SessionDescription, &session.SessionProof,
 			&session.SessionFeedback, &session.StudentAttendanceProof,
 			&session.MentorAttendanceProof, &session.SessionStatus,
@@ -104,6 +161,13 @@ func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		// ✅ Convert string to TimeOnly
+		if timeValue, err := time.Parse("15:04:05", sessionTimeStr); err == nil {
+			session.SessionTime = TimeOnly(timeValue)
+		} else {
+			log.Printf("❌ Failed to parse time: %s, error: %v", sessionTimeStr, err)
 		}
 
 		session.User = *user
@@ -117,7 +181,8 @@ func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
 func (repo *MeetingSessionRepository) GetByID(id int) (*MeetingSession, error) {
 	query := `
         SELECT 
-            ms.id, ms.user_id, ms.mentor_id, ms.session_date, ms.session_time, 
+            ms.id, ms.user_id, ms.mentor_id, ms.session_date, 
+            ms.session_time::text as session_time,  -- ✅ Cast to text consistently
             ms.session_duration, ms.session_type, ms.session_topic, ms.session_description,
             ms.session_proof, ms.session_feedback, ms.student_attendance_proof,
             ms.mentor_attendance_proof, ms.session_status, ms.is_student_attended, ms.is_mentor_attended, ms.created_at, ms.updated_at,
@@ -132,10 +197,11 @@ func (repo *MeetingSessionRepository) GetByID(id int) (*MeetingSession, error) {
 	session := &MeetingSession{}
 	user := &User{}
 	mentor := &User{}
+	var sessionTimeStr string // ✅ Scan as string
 
 	err := repo.db.QueryRow(query, id).Scan(
 		&session.ID, &session.UserID, &session.MentorID, &session.SessionDate,
-		&session.SessionTime, &session.SessionDuration, &session.SessionType,
+		&sessionTimeStr, &session.SessionDuration, &session.SessionType, // ✅ Use string
 		&session.SessionTopic, &session.SessionDescription, &session.SessionProof,
 		&session.SessionFeedback, &session.StudentAttendanceProof,
 		&session.MentorAttendanceProof, &session.SessionStatus,
@@ -152,6 +218,12 @@ func (repo *MeetingSessionRepository) GetByID(id int) (*MeetingSession, error) {
 		return nil, err
 	}
 
+	if timeValue, err := time.Parse("15:04:05", sessionTimeStr); err == nil {
+		session.SessionTime = TimeOnly(timeValue)
+	} else {
+		log.Printf("❌ Failed to parse time: %s, error: %v", sessionTimeStr, err)
+	}
+
 	session.User = *user
 	session.Mentor = *mentor
 
@@ -160,19 +232,20 @@ func (repo *MeetingSessionRepository) GetByID(id int) (*MeetingSession, error) {
 
 func (repo *MeetingSessionRepository) GetByUser(userID int) ([]*MeetingSession, error) {
 	query := `
-		SELECT 
-			ms.id, ms.user_id, ms.mentor_id, ms.session_date, ms.session_time, 
-			ms.session_duration, ms.session_type, ms.session_topic, ms.session_description,
-			ms.session_proof, ms.session_feedback, ms.student_attendance_proof,
-			ms.mentor_attendance_proof, ms.session_status, ms.is_student_attended, ms.is_mentor_attended, ms.created_at, ms.updated_at,
-			u.id as user_id, u.name as user_name, u.email as user_email, u.role as user_role,
-			m.id as mentor_id, m.name as mentor_name, m.email as mentor_email, m.role as mentor_role
-		FROM meeting_sessions ms
-		LEFT JOIN users u ON ms.user_id = u.id
-		LEFT JOIN users m ON ms.mentor_id = m.id
-		WHERE (u.id = $1 OR m.id = $1)
-		ORDER BY ms.created_at DESC
-	`
+        SELECT 
+            ms.id, ms.user_id, ms.mentor_id, ms.session_date, 
+            ms.session_time::text as session_time,  -- ✅ Cast to text consistently
+            ms.session_duration, ms.session_type, ms.session_topic, ms.session_description,
+            ms.session_proof, ms.session_feedback, ms.student_attendance_proof,
+            ms.mentor_attendance_proof, ms.session_status, ms.is_student_attended, ms.is_mentor_attended, ms.created_at, ms.updated_at,
+            u.id as user_id, u.name as user_name, u.email as user_email, u.role as user_role,
+            m.id as mentor_id, m.name as mentor_name, m.email as mentor_email, m.role as mentor_role
+        FROM meeting_sessions ms
+        LEFT JOIN users u ON ms.user_id = u.id
+        LEFT JOIN users m ON ms.mentor_id = m.id
+        WHERE (u.id = $1 OR m.id = $1)
+        ORDER BY ms.created_at DESC
+    `
 
 	rows, err := repo.db.Query(query, userID)
 	if err != nil {
@@ -185,10 +258,11 @@ func (repo *MeetingSessionRepository) GetByUser(userID int) ([]*MeetingSession, 
 		session := &MeetingSession{}
 		user := &User{}
 		mentor := &User{}
+		var sessionTimeStr string
 
 		err := rows.Scan(
 			&session.ID, &session.UserID, &session.MentorID, &session.SessionDate,
-			&session.SessionTime, &session.SessionDuration, &session.SessionType,
+			&sessionTimeStr, &session.SessionDuration, &session.SessionType, // ✅ Use string
 			&session.SessionTopic, &session.SessionDescription, &session.SessionProof,
 			&session.SessionFeedback, &session.StudentAttendanceProof,
 			&session.MentorAttendanceProof, &session.SessionStatus,
@@ -199,6 +273,13 @@ func (repo *MeetingSessionRepository) GetByUser(userID int) ([]*MeetingSession, 
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		// ✅ Convert string to TimeOnly
+		if timeValue, err := time.Parse("15:04:05", sessionTimeStr); err == nil {
+			session.SessionTime = TimeOnly(timeValue)
+		} else {
+			log.Printf("❌ Failed to parse time: %s, error: %v", sessionTimeStr, err)
 		}
 
 		session.User = *user

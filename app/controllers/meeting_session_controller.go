@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/studio-senkou/lentera-cendekia-be/app/models"
@@ -12,6 +13,8 @@ import (
 	"github.com/studio-senkou/lentera-cendekia-be/utils/storage"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/validator"
 )
+
+
 
 type MeetingSessionController struct {
 	meetingSessionRepo *models.MeetingSessionRepository
@@ -23,6 +26,18 @@ func NewMeetingSessionController() *MeetingSessionController {
 	return &MeetingSessionController{
 		meetingSessionRepo: models.NewMeetingSessionRepository(db),
 	}
+}
+
+func parseTimeOnly(timeStr string) (models.TimeOnly, error) {
+    parsedTime, err := time.Parse("15:04:05", timeStr)
+    if err != nil {
+
+        parsedTime, err = time.Parse("15:04", timeStr)
+        if err != nil {
+            return models.TimeOnly{}, err
+        }
+    }
+    return models.TimeOnly(parsedTime), nil
 }
 
 func (mc *MeetingSessionController) CreateMeetingSession(c *fiber.Ctx) error {
@@ -42,18 +57,26 @@ func (mc *MeetingSessionController) CreateMeetingSession(c *fiber.Ctx) error {
 		})
 	}
 
-	session := &models.MeetingSession{
-		UserID:             createMeetingSessionRequest.StudentID,
-		MentorID:           createMeetingSessionRequest.MentorID,
-		SessionDate:        createMeetingSessionRequest.Date,
-		SessionTime:        createMeetingSessionRequest.Time,
-		SessionDuration:    createMeetingSessionRequest.Duration,
-		SessionType:        createMeetingSessionRequest.Type,
-		SessionTopic:       createMeetingSessionRequest.Topic,
-		SessionDescription: &createMeetingSessionRequest.Description,
+	sessionTime, err := parseTimeOnly(createMeetingSessionRequest.Time)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid time format",
+			"error":   "Time must be in format HH:MM:SS or HH:MM",
+		})
 	}
 
-	if err := mc.meetingSessionRepo.Create(session); err != nil {
+	meetingSession := &models.MeetingSession{
+		UserID:          createMeetingSessionRequest.StudentID,
+		MentorID:        createMeetingSessionRequest.MentorID,
+		SessionDate:     createMeetingSessionRequest.Date,
+		SessionTime:     sessionTime,
+		SessionDuration: createMeetingSessionRequest.Duration,
+		SessionType:     createMeetingSessionRequest.Type,
+		SessionTopic:    createMeetingSessionRequest.Topic,
+	}
+
+	if err := mc.meetingSessionRepo.Create(meetingSession); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Failed to create meeting session",
@@ -64,9 +87,7 @@ func (mc *MeetingSessionController) CreateMeetingSession(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"status":  "success",
 		"message": "Meeting session created successfully",
-		"data": fiber.Map{
-			"session": session,
-		},
+		"data":    meetingSession,
 	})
 }
 
@@ -179,17 +200,26 @@ func (mc *MeetingSessionController) UpdateMeetingSession(c *fiber.Ctx) error {
 		})
 	}
 
-	session := &models.MeetingSession{
+	sessionTime, err := parseTimeOnly(updateMeetingSessionRequest.Time)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid time format",
+			"error":   "Time must be in format HH:MM:SS or HH:MM",
+		})
+	}
+
+	meetingSession := &models.MeetingSession{
 		ID:                 meetingID,
 		SessionDate:        updateMeetingSessionRequest.Date,
-		SessionTime:        updateMeetingSessionRequest.Time,
+		SessionTime:        sessionTime,
 		SessionDuration:    updateMeetingSessionRequest.Duration,
-		SessionTopic:       updateMeetingSessionRequest.Topic,
 		SessionType:        updateMeetingSessionRequest.Type,
+		SessionTopic:       updateMeetingSessionRequest.Topic,
 		SessionDescription: updateMeetingSessionRequest.Description,
 	}
 
-	if err := mc.meetingSessionRepo.Update(session); err != nil {
+	if err := mc.meetingSessionRepo.Update(meetingSession); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Failed to update meeting session",
