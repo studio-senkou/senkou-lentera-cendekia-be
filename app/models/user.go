@@ -78,6 +78,38 @@ func (r *UserRepository) GetAll() ([]*User, error) {
 	return users, nil
 }
 
+func (r *UserRepository) GetUserCount() (map[string]int, error) {
+	query := `SELECT role, COUNT(*) FROM users WHERE is_active = true GROUP BY role`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	fmt.Println(rows)
+
+	userCount := make(map[string]int)
+	for rows.Next() {
+		var role string
+		var count int
+
+		if err := rows.Scan(&role, &count); err != nil {
+			return nil, err
+		}
+
+		if role != "admin" {
+			if role == "user" {
+				userCount["student"] = count
+			} else {
+				userCount[role] = count
+			}
+		}
+	}
+
+	return userCount, nil
+}
+
 func (r *UserRepository) GetUserDropdown() ([]*User, error) {
 	query := `SELECT id, name FROM users WHERE role = 'user' ORDER BY name`
 

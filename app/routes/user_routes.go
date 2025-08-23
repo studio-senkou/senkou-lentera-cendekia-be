@@ -24,6 +24,7 @@ func SetupUserRoutes(router fiber.Router) {
 	router.Get("/users/mentors/dropdown", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("admin"), userController.GetMentorDropdown)
 	router.Get("/users/me", middlewares.AuthMiddleware(), userController.GetUserMe)
 	router.Get("/users/:id", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("admin"), userController.GetUser)
+	router.Get("/active-user", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("admin"), userController.GetActiveUser)
 
 	router.Put("/users", middlewares.AuthMiddleware()) // Update logged-in user
 	router.Put("/users/:id", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("admin"), userController.UpdateUser)

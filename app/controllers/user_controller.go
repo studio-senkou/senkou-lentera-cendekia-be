@@ -336,6 +336,23 @@ func (uc *UserController) GetUserMe(c *fiber.Ctx) error {
 	})
 }
 
+func (uc *UserController) GetActiveUser(c *fiber.Ctx) error {
+	users, err := uc.userRepo.GetUserCount()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to retrieve user count",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":  "success",
+		"message": "Successfully retrieved user count",
+		"data": fiber.Map{
+			"users": users,
+		},
+	})
+}
+
 func (uc *UserController) GetUserAsDropdown(c *fiber.Ctx) error {
 	users, err := uc.userRepo.GetUserDropdown()
 	if err != nil {
