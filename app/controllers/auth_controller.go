@@ -67,13 +67,13 @@ func (ac *AuthController) Login(c *fiber.Ctx, isAdmin bool) error {
 	}
 
 	if err != nil || user == nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Login failed",
 			"error":   "Invalid email or password",
 		})
 	} else if !user.CheckPassword(loginRequest.Password) {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Login failed",
 			"error":   "Invalid email or password",
@@ -81,7 +81,7 @@ func (ac *AuthController) Login(c *fiber.Ctx, isAdmin bool) error {
 	}
 
 	if !user.IsEmailVerified() || !user.IsActive {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Email not verified",
 			"error":   "Please verify your email before logging in",
@@ -228,7 +228,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 
 	claims, err := ac.jwtManager.ValidateToken(refreshTokenRequest.Token)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Invalid refresh token",
 			"error":   err.Error(),
@@ -237,7 +237,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 
 	payloadMap, ok := claims["payload"].(map[string]any)
 	if !ok {
-		return c.Status(401).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Invalid token payload format",
 		})
@@ -247,7 +247,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 	if id, ok := payloadMap["user_id"].(float64); ok {
 		parsedUserID = int(id)
 	} else {
-		return c.Status(401).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Invalid user ID in token",
 			"error":   "Invalid user ID",
@@ -258,7 +258,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 	userID, err := strconv.ParseInt(userIDStr, 10, 32)
 
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Invalid refresh token",
 			"error":   "Invalid user ID in token",
@@ -266,7 +266,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 	}
 
 	if ok, err := ac.authRepo.ValidateSessionExist(int(userID), refreshTokenRequest.Token); err != nil || !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Invalid refresh token",
 			"error":   "Session does not exist or has been invalidated",
@@ -325,7 +325,7 @@ func (ac *AuthController) Logout(c *fiber.Ctx) error {
 	userID, err := strconv.ParseInt(userIDStr, 10, 32)
 
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Unable to log out",
 			"error":   "Invalid user ID",
