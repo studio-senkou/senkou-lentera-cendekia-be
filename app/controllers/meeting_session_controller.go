@@ -91,8 +91,12 @@ func (mc *MeetingSessionController) CreateMeetingSession(c *fiber.Ctx) error {
 	})
 }
 
+
+
 func (mc *MeetingSessionController) GetMeetingSession(c *fiber.Ctx) error {
-	sessions, err := mc.meetingSessionRepo.GetAll()
+	sessions, err := mc.meetingSessionRepo.GetAll(&requests.MeetingSessionFilters{
+		Date: c.Query("date"),
+	})
 
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{

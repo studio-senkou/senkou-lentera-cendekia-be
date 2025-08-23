@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/studio-senkou/lentera-cendekia-be/app/requests"
 )
 
 type TimeOnly time.Time
@@ -117,7 +119,7 @@ func (repo *MeetingSessionRepository) Create(session *MeetingSession) error {
 	return err
 }
 
-func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
+func (repo *MeetingSessionRepository) GetAll(filters *requests.MeetingSessionFilters) ([]*MeetingSession, error) {
 	query := `
         SELECT 
             ms.id, ms.user_id, ms.mentor_id, ms.session_date, 
@@ -130,10 +132,41 @@ func (repo *MeetingSessionRepository) GetAll() ([]*MeetingSession, error) {
         FROM meeting_sessions ms
         LEFT JOIN users u ON ms.user_id = u.id
         LEFT JOIN users m ON ms.mentor_id = m.id
-        ORDER BY ms.created_at DESC
     `
 
-	rows, err := repo.db.Query(query)
+	conditions := []string{}
+	args := []any{}
+	argPos := 1
+
+	if filters != nil {
+
+		var startDate, endDate string
+
+		filterDates := strings.Split(filters.Date, "|")
+		if len(filterDates) == 2 {
+			startDate = filterDates[0]
+			endDate = filterDates[1]
+		}
+
+		if startDate != ""{
+            conditions = append(conditions, fmt.Sprintf("ms.session_date >= $%d", argPos))
+            args = append(args, startDate)
+            argPos++
+        }
+        if endDate != "" {
+            conditions = append(conditions, fmt.Sprintf("ms.session_date <= $%d", argPos))
+            args = append(args, endDate)
+            argPos++
+        }
+	}
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	query += " ORDER BY ms.created_at DESC"
+
+	rows, err := repo.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
