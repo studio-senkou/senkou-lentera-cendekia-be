@@ -40,6 +40,7 @@ func (a *application) Run() error {
 	fiberApp.Use(config.NewCORSConfig())
 
 	router := fiberApp.Group("/api/v1")
+	routes.SetupClassRoutes(router)
 	routes.SetupUserRoutes(router)
 	routes.SetupAuthRoutes(router)
 	routes.SetupMeetingSessionRoutes(router)
