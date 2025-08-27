@@ -7,5 +7,7 @@ CREATE TABLE IF NOT EXISTS blogs (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP,
 
-    FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
+    CONSTRAINT fk_blogs
+        FOREIGN KEY (author_id) REFERENCES users(id)
+        ON UPDATE CASCADE ON DELETE CASCADE
 )

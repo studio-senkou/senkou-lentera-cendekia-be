@@ -1,20 +1,20 @@
-CREATE TABLE meeting_sessions (
+CREATE TABLE IF NOT EXISTS meeting_sessions (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
     mentor_id INTEGER NOT NULL,
-    session_date TIMESTAMP NOT NULL,
+    session_date DATE NOT NULL,
     session_time TIME NOT NULL,
-    session_duration INT NOT NULL, -- Duration in minutes
-    session_type VARCHAR(50) NOT NULL,
-    session_topic VARCHAR(255) NOT NULL,
-    session_description TEXT,
-    session_proof TEXT,
-    session_feedback TEXT,
-    student_attendance_proof TEXT,
-    mentor_attendance_proof TEXT,
-    is_student_attended BOOLEAN NOT NULL DEFAULT FALSE,
-    is_mentor_attended BOOLEAN NOT NULL DEFAULT FALSE,
-    session_status VARCHAR(50) NOT NULL DEFAULT 'scheduled',
+    duration_minutes SMALLINT NOT NULL, -- Duration in minutes
+    status VARCHAR(20) NOT NULL, -- e.g., scheduled, completed, missed, canceled
+    note TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP,
+    deleted_at TIMESTAMP,
+
+    CONSTRAINT fk_student_mt_session
+        FOREIGN KEY (student_id) REFERENCES students(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_mentor_mt_session
+        FOREIGN KEY (mentor_id) REFERENCES mentors(id)
+        ON UPDATE CASCADE ON DELETE CASCADE
 )

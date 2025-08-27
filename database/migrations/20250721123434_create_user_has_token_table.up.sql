@@ -1,9 +1,11 @@
-CREATE TABLE user_has_tokens (
+CREATE TABLE IF NOT EXISTS user_has_tokens (
     id SERIAL PRIMARY KEY,
     user_id SERIAL NOT NULL UNIQUE,
     token TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    updated_at TIMESTAMP,
+    deleted_at TIMESTAMP,
+
+    CONSTRAINT fk_user_has_tokens
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 )

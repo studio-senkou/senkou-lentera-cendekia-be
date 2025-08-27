@@ -5,5 +5,5 @@ CREATE TABLE IF NOT EXISTS static_assets (
     asset_url TEXT NOT NULL,
     asset_description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP
 );

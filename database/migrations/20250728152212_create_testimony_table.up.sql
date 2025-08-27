@@ -6,6 +6,6 @@ CREATE TABLE IF NOT EXISTS testimonials (
     testimoner_photo TEXT,
     testimony_text TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP,
     deleted_at TIMESTAMP
 );
