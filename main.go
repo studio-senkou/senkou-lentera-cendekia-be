@@ -1,6 +1,6 @@
 package main
 
-import "github.com/studio-senkou/lentera-cendekia-be/cmd"
+import cmd "github.com/studio-senkou/lentera-cendekia-be/cmd/server"
 
 // Senkou Lentera Quiz API
 // @title Lentera Quiz API
@@ -15,4 +15,3 @@ func main() {
 		panic(err)
 	}
 }
-

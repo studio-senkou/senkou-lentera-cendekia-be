@@ -1,4 +1,4 @@
-package main
+package seeders
 
 import (
 	"database/sql"
@@ -6,25 +6,9 @@ import (
 	"time"
 
 	"github.com/studio-senkou/lentera-cendekia-be/app/models"
-	"github.com/studio-senkou/lentera-cendekia-be/database"
 )
 
-func main() {
-	if err := database.InitializeDatabase(); err != nil {
-		panic(fmt.Sprintf("Failed to initialize database: %v", err))
-	}
-	defer database.CloseDatabase()
-
-	db := database.GetDB()
-
-	if err := Seed(db); err != nil {
-		panic(err)
-	}
-	defer db.Close()
-	fmt.Println("Database seeded successfully")
-}
-
-func Seed(db *sql.DB) error {
+func SeedUsers(db *sql.DB) error {
 	userRepository := models.NewUserRepository(db)
 
 	administrator := &models.User{
