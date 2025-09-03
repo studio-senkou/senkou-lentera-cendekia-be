@@ -9,6 +9,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/studio-senkou/lentera-cendekia-be/database"
 	"github.com/studio-senkou/lentera-cendekia-be/database/seeders"
+	"github.com/studio-senkou/lentera-cendekia-be/utils/cache"
 )
 
 type SeederClosure func(*sql.DB) error
@@ -45,6 +46,10 @@ func main() {
 		panic(fmt.Sprintf("Failed to initialize database: %v", err))
 	}
 	defer database.CloseDatabase()
+
+	if err := cache.InitRedis(); err != nil {
+		panic(fmt.Sprintf("Failed to initialize Redis cache: %v", err))
+	}
 
 	db := database.GetDB()
 	defer db.Close()
