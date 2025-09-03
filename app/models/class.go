@@ -8,7 +8,7 @@ import (
 )
 
 type Class struct {
-	ID        uuid.UUID  `json:"ID"`
+	ID        uuid.UUID  `json:"id"`
 	ClassName string     `json:"classname"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt *time.Time `json:"-"`
@@ -25,17 +25,29 @@ func NewClassRepository(db *sql.DB) *ClassRepository {
 	}
 }
 
-func (r *ClassRepository) Store(className string) error {
+func (r *ClassRepository) Store(className string) (*Class, error) {
 	classId := uuid.New()
 
 	query := `
 		INSERT INTO classes (id, classname) 
-		VALUES ($1, $2) RETURNING id
+		VALUES ($1, $2) RETURNING id, classname, created_at
 	`
 
-	err := r.db.QueryRow(query, classId, className).Err()
+	class := new(Class)
 
-	return err
+	if err := r.db.QueryRow(
+		query,
+		classId,
+		className,
+	).Scan(
+		&class.ID,
+		&class.ClassName,
+		&class.CreatedAt,
+	); err != nil {
+		return nil, err
+	}
+
+	return class, nil
 }
 
 func (r *ClassRepository) FindAll() ([]*Class, error) {

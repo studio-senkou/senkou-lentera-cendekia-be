@@ -36,7 +36,8 @@ func (cc *ClassController) CreateNewClass(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := cc.classRepo.Store(createClassRequest.ClassName); err != nil {
+	class, err := cc.classRepo.Store(createClassRequest.ClassName)
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Failed to create new class",
 			"error":   err.Error(),
@@ -45,6 +46,9 @@ func (cc *ClassController) CreateNewClass(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "Successfully create new class",
+		"data": fiber.Map{
+			"class": class,
+		},
 	})
 }
 

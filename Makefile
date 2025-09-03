@@ -1,18 +1,18 @@
 .PHONY=migrate-up migrate-up-force migrate-down generate-app-key create-migration migrate-fresh seed rebuild-prod rebuild-dev
 
 # Comment if want to rebuild docker containers to remove collision with environment variables
-# ifneq (,$(wildcard ./.env))
-# DB_USERNAME := $(shell grep '^DB_USERNAME=' .env | cut -d '=' -f2-)
-# DB_PASSWORD := $(shell grep '^DB_PASSWORD=' .env | cut -d '=' -f2-)
-# DB_HOST := $(shell grep '^DB_HOST=' .env | cut -d '=' -f2-)
-# DB_PORT := $(shell grep '^DB_PORT=' .env | cut -d '=' -f2-)
-# DB_DATABASE := $(shell grep '^DB_DATABASE=' .env | cut -d '=' -f2-)
-# export DB_USERNAME
-# export DB_PASSWORD
-# export DB_HOST
-# export DB_PORT
-# export DB_DATABASE
-# endif
+ifneq (,$(wildcard ./.env))
+DB_USERNAME := $(shell grep '^DB_USERNAME=' .env | cut -d '=' -f2-)
+DB_PASSWORD := $(shell grep '^DB_PASSWORD=' .env | cut -d '=' -f2-)
+DB_HOST := $(shell grep '^DB_HOST=' .env | cut -d '=' -f2-)
+DB_PORT := $(shell grep '^DB_PORT=' .env | cut -d '=' -f2-)
+DB_DATABASE := $(shell grep '^DB_DATABASE=' .env | cut -d '=' -f2-)
+export DB_USERNAME
+export DB_PASSWORD
+export DB_HOST
+export DB_PORT
+export DB_DATABASE
+endif
 
 generate-app-key:
 	@echo "Generating application key.."

@@ -1,23 +1,19 @@
 package controllers
 
 import (
-	"database/sql"
-	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/studio-senkou/lentera-cendekia-be/app/models"
 	"github.com/studio-senkou/lentera-cendekia-be/app/requests"
 	"github.com/studio-senkou/lentera-cendekia-be/database"
-	"github.com/studio-senkou/lentera-cendekia-be/utils/storage"
+	"github.com/studio-senkou/lentera-cendekia-be/utils/datetime"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/validator"
 )
 
-
-
 type MeetingSessionController struct {
 	meetingSessionRepo *models.MeetingSessionRepository
+	studentPlanRepo    *models.StudentPlanRepository
 }
 
 func NewMeetingSessionController() *MeetingSessionController {
@@ -25,19 +21,8 @@ func NewMeetingSessionController() *MeetingSessionController {
 
 	return &MeetingSessionController{
 		meetingSessionRepo: models.NewMeetingSessionRepository(db),
+		studentPlanRepo:    models.NewStudentPlanRepository(db),
 	}
-}
-
-func parseTimeOnly(timeStr string) (models.TimeOnly, error) {
-    parsedTime, err := time.Parse("15:04:05", timeStr)
-    if err != nil {
-
-        parsedTime, err = time.Parse("15:04", timeStr)
-        if err != nil {
-            return models.TimeOnly{}, err
-        }
-    }
-    return models.TimeOnly(parsedTime), nil
 }
 
 func (mc *MeetingSessionController) CreateMeetingSession(c *fiber.Ctx) error {
@@ -57,7 +42,16 @@ func (mc *MeetingSessionController) CreateMeetingSession(c *fiber.Ctx) error {
 		})
 	}
 
-	sessionTime, err := parseTimeOnly(createMeetingSessionRequest.Time)
+	sessionDate, err := datetime.ParseDateOnly(createMeetingSessionRequest.Date)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid date format",
+			"error":   "Date format must be YYYY-MM-DD",
+		})
+	}
+
+	sessionTime, err := datetime.ParseTimeOnly(createMeetingSessionRequest.Time)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "fail",
@@ -67,16 +61,17 @@ func (mc *MeetingSessionController) CreateMeetingSession(c *fiber.Ctx) error {
 	}
 
 	meetingSession := &models.MeetingSession{
-		UserID:          createMeetingSessionRequest.StudentID,
-		MentorID:        createMeetingSessionRequest.MentorID,
-		SessionDate:     createMeetingSessionRequest.Date,
-		SessionTime:     sessionTime,
-		SessionDuration: createMeetingSessionRequest.Duration,
-		SessionType:     createMeetingSessionRequest.Type,
-		SessionTopic:    createMeetingSessionRequest.Topic,
+		StudentID:   createMeetingSessionRequest.StudentID,
+		MentorID:    createMeetingSessionRequest.MentorID,
+		Date:        sessionDate,
+		Time:        sessionTime,
+		Duration:    createMeetingSessionRequest.Duration,
+		Note:        createMeetingSessionRequest.Note,
+		Description: createMeetingSessionRequest.Description,
+		Status:      "pending",
 	}
 
-	if err := mc.meetingSessionRepo.Create(meetingSession); err != nil {
+	if _, err := mc.meetingSessionRepo.Create(meetingSession); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Failed to create meeting session",
@@ -87,86 +82,169 @@ func (mc *MeetingSessionController) CreateMeetingSession(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"status":  "success",
 		"message": "Meeting session created successfully",
-		"data":    meetingSession,
+		"data": fiber.Map{
+			"id":           meetingSession.ID,
+			"session_date": meetingSession.Date,
+			"session_time": meetingSession.Time,
+			"duration":     meetingSession.Duration,
+			"status":       meetingSession.Status,
+			"note":         meetingSession.Note,
+			"description":  meetingSession.Description,
+		},
 	})
 }
 
+func (mc *MeetingSessionController) BulkCreateMeetingSessions(c *fiber.Ctx) error {
+	bulkCreateMeetingSessions := new(requests.BulkCreateMeetingSessionRequest)
+	
+	if validationError, err := validator.ValidateRequest(c, bulkCreateMeetingSessions); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Cannot parse request body",
+			"error":   err.Error(),
+		})
+	} else if len(validationError) > 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Bad request",
+			"errors":  validationError,
+		})
+	}
 
+	sessions := make([]*models.MeetingSession, len(bulkCreateMeetingSessions.Sessions))
 
-func (mc *MeetingSessionController) GetMeetingSession(c *fiber.Ctx) error {
-	sessions, err := mc.meetingSessionRepo.GetAll(&requests.MeetingSessionFilters{
-		Date: c.Query("date"),
+	for i, session := range bulkCreateMeetingSessions.Sessions {
+		sessionDate, err := datetime.ParseDateOnly(session.Date)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "Invalid date format",
+				"error":   "Date format must be YYYY-MM-DD",
+			})
+		}
+
+		sessionTime, err := datetime.ParseTimeOnly(session.Time)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "Invalid time format",
+				"error":   "Time must be in format HH:MM:SS or HH:MM",
+			})
+		}
+		
+		sessions[i] = &models.MeetingSession{
+			StudentID:   session.StudentID,
+			MentorID:    session.MentorID,
+			Date:        sessionDate,
+			Time:        sessionTime,
+			Duration:    session.Duration,
+			Note:        session.Note,
+			Description: session.Description,
+			Status:      "pending",
+		}
+	}
+
+	if err := mc.meetingSessionRepo.BulkCreateSessions(sessions); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status": "fail",
+			"message": "Failed to bulk create meeting sessions",
+			"error": err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"status": "success",
+		"message": "Successfully created meeting sessions",
 	})
+}
 
+func (mc *MeetingSessionController) GetMeetingSessions(c *fiber.Ctx) error {
+
+	user, err := strconv.Atoi(c.Query("user", "0"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid user ID",
+			"error":   err.Error(),
+		})
+	}
+
+	meetingSessions, err := mc.meetingSessionRepo.GetAll(uint(user))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
+			"status":  "fail",
 			"message": "Failed to retrieve meeting sessions",
 			"error":   err.Error(),
 		})
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"status":  "success",
-		"message": "Meeting sessions retrieved successfully",
-		"data": fiber.Map{
-			"sessions": sessions,
-		},
-	})
-}
+	data := make(fiber.Map)
+	sessions := make([]map[string]any, 0)
+	for _, session := range meetingSessions {
+		record := fiber.Map{
+			"id":         session.ID,
+			"student_id": session.StudentID,
+			"student": fiber.Map{
+				"id":    session.Student.ID,
+				"name":  session.Student.User.Name,
+				"email": session.Student.User.Email,
+			},
+			"mentor": fiber.Map{
+				"id":    session.Mentor.ID,
+				"name":  session.Mentor.User.Name,
+				"email": session.Mentor.User.Email,
+			},
+			"mentor_id":    session.MentorID,
+			"session_date": session.Date,
+			"session_time": session.Time,
+			"duration":     session.Duration,
+			"status":       session.Status,
+			"note":         session.Note,
+			"description":  session.Description,
+		}
 
-func (mc *MeetingSessionController) GetUserMeetingSession(c *fiber.Ctx) error {
-	userIDStr := fmt.Sprintf("%v", c.Locals("userID"))
-	userID, err := strconv.ParseInt(userIDStr, 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Unauthorized",
-			"error":   "Invalid user ID",
-		})
+		sessions = append(sessions, record)
 	}
 
-	sessions, err := mc.meetingSessionRepo.GetByUser(int(userID))
+	data["sessions"] = sessions
+
+	studentPlan, err := mc.studentPlanRepo.GetCurrentStudentPlan(uint(user))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
-			"message": "Failed to retrieve meeting sessions for user",
+			"message": "Failed to retrieve student plan",
 			"error":   err.Error(),
 		})
 	}
 
+	if user != 0 && studentPlan != nil {
+		data["total_sessions"] = studentPlan.TotalSessions
+		data["student_id"] = studentPlan.StudentID
+	}
+
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  "success",
 		"message": "Meeting sessions retrieved successfully",
-		"data": fiber.Map{
-			"sessions": sessions,
-		},
+		"data":    data,
 	})
 }
 
 func (mc *MeetingSessionController) GetMeetingSessionByID(c *fiber.Ctx) error {
-	meetingID, err := strconv.Atoi(c.Params("id"))
+	sessionID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "fail",
-			"message": "Invalid meeting session ID",
-			"error":   "ID must be a number",
-		})
-	}
-
-	session, err := mc.meetingSessionRepo.GetByID(meetingID)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to retrieve meeting session",
+			"message": "Invalid session ID",
 			"error":   err.Error(),
 		})
 	}
 
-	if session == nil {
+	meetingSession, err := mc.meetingSessionRepo.GetByID(uint(sessionID))
+	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Meeting session not found",
+			"error":   err.Error(),
 		})
 	}
 
@@ -174,22 +252,32 @@ func (mc *MeetingSessionController) GetMeetingSessionByID(c *fiber.Ctx) error {
 		"status":  "success",
 		"message": "Meeting session retrieved successfully",
 		"data": fiber.Map{
-			"session": session,
+			"id":         meetingSession.ID,
+			"student_id": meetingSession.StudentID,
+			"mentor_id":  meetingSession.MentorID,
+			"student": fiber.Map{
+				"id":    meetingSession.Student.ID,
+				"name":  meetingSession.Student.User.Name,
+				"email": meetingSession.Student.User.Email,
+			},
+			"mentor": fiber.Map{
+				"id":    meetingSession.Mentor.ID,
+				"name":  meetingSession.Mentor.User.Name,
+				"email": meetingSession.Mentor.User.Email,
+			},
+			"session_date": meetingSession.Date,
+			"session_time": meetingSession.Time,
+			"duration":     meetingSession.Duration,
+			"status":       meetingSession.Status,
+			"note":         meetingSession.Note,
+			"description":  meetingSession.Description,
 		},
 	})
 }
 
 func (mc *MeetingSessionController) UpdateMeetingSession(c *fiber.Ctx) error {
-	meetingID, err := strconv.Atoi(c.Params("id"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Invalid meeting session ID",
-			"error":   "ID must be a number",
-		})
-	}
-
 	updateMeetingSessionRequest := new(requests.UpdateMeetingSessionRequest)
+
 	if validationError, err := validator.ValidateRequest(c, updateMeetingSessionRequest); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "fail",
@@ -204,26 +292,41 @@ func (mc *MeetingSessionController) UpdateMeetingSession(c *fiber.Ctx) error {
 		})
 	}
 
-	sessionTime, err := parseTimeOnly(updateMeetingSessionRequest.Time)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Invalid time format",
-			"error":   "Time must be in format HH:MM:SS or HH:MM",
-		})
+	sessions := make([]*models.MeetingSession, len(updateMeetingSessionRequest.Sessions))
+
+	for i, sessionReq := range updateMeetingSessionRequest.Sessions {
+		sessionDate, err := datetime.ParseDateOnly(sessionReq.Date)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "Invalid session date",
+				"error":   err.Error(),
+			})
+		}
+
+		sessionTime, err := datetime.ParseTimeOnly(sessionReq.Time)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "Invalid session time",
+				"error":   err.Error(),
+			})
+		}
+
+		sessions[i] = &models.MeetingSession{
+			ID:          sessionReq.SessionID,
+			StudentID:   sessionReq.StudentID,
+			MentorID:    sessionReq.MentorID,
+			Date:        sessionDate,
+			Time:        sessionTime,
+			Duration:    sessionReq.Duration,
+			Note:        sessionReq.Note,
+			Description: sessionReq.Description,
+			Status:      sessionReq.Status,
+		}
 	}
 
-	meetingSession := &models.MeetingSession{
-		ID:                 meetingID,
-		SessionDate:        updateMeetingSessionRequest.Date,
-		SessionTime:        sessionTime,
-		SessionDuration:    updateMeetingSessionRequest.Duration,
-		SessionType:        updateMeetingSessionRequest.Type,
-		SessionTopic:       updateMeetingSessionRequest.Topic,
-		SessionDescription: updateMeetingSessionRequest.Description,
-	}
-
-	if err := mc.meetingSessionRepo.Update(meetingSession); err != nil {
+	if err := mc.meetingSessionRepo.BulkUpdate(sessions); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Failed to update meeting session",
@@ -238,16 +341,16 @@ func (mc *MeetingSessionController) UpdateMeetingSession(c *fiber.Ctx) error {
 }
 
 func (mc *MeetingSessionController) DeleteMeetingSession(c *fiber.Ctx) error {
-	meetingID, err := strconv.Atoi(c.Params("id"))
+	sessionID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "fail",
-			"message": "Invalid meeting session ID",
-			"error":   "ID must be a number",
+			"message": "Invalid session ID",
+			"error":   err.Error(),
 		})
 	}
 
-	if err := mc.meetingSessionRepo.Delete(meetingID); err != nil {
+	if err := mc.meetingSessionRepo.Delete(uint(sessionID)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Failed to delete meeting session",
@@ -258,262 +361,5 @@ func (mc *MeetingSessionController) DeleteMeetingSession(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  "success",
 		"message": "Meeting session deleted successfully",
-	})
-}
-
-func (mc *MeetingSessionController) UserAttend(c *fiber.Ctx) error {
-	meetingID, err := strconv.Atoi(c.Params("id"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Invalid meeting session ID",
-			"error":   "ID must be a number",
-		})
-	}
-
-	userIDStr := fmt.Sprintf("%v", c.Locals("userID"))
-	userID, err := strconv.ParseInt(userIDStr, 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Unauthorized",
-			"error":   "Invalid user ID",
-		})
-	}
-
-	if err := mc.meetingSessionRepo.VerifyAttendance(meetingID, int(userID), false); err != nil {
-		if err == sql.ErrNoRows {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"status":  "fail",
-				"message": "You have already attended this session or session does not exist",
-			})
-		}
-
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Cannot verify attendance",
-			"error":   "User has already attended this session or session does not exist",
-		})
-	}
-
-	sessionProof, err := c.FormFile("session_proof")
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Cannot parse request body",
-			"error":   err.Error(),
-		})
-	} else if sessionProof == nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Session proof image is required",
-		})
-	}
-
-	sessionAttendanceProof, err := c.FormFile("session_attendance_proof")
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Cannot parse request body",
-			"error":   err.Error(),
-		})
-	} else if sessionAttendanceProof == nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Session attendance proof image is required",
-		})
-	}
-
-	if !storage.IsValidImageExtension(sessionProof.Filename) || !storage.IsValidImageExtension(sessionAttendanceProof.Filename) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Invalid session proof image format",
-		})
-	}
-
-	maxSize := int64(0.5 * 1024 * 1024)
-	if sessionProof.Size > maxSize || sessionAttendanceProof.Size > maxSize {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Session proof image size exceeds 500KB",
-		})
-	}
-
-	uploadedSessionProofPath, err := storage.UploadFileToStorage(sessionProof, "meeting_sessions", "MEET-SESSION", nil)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to upload session proof image",
-			"error":   err.Error(),
-		})
-	}
-
-	uploadedSessionAttendanceProofPath, err := storage.UploadFileToStorage(sessionAttendanceProof, "meeting_sessions", "MEET-SESSION", nil)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to upload session attendance proof image",
-			"error":   err.Error(),
-		})
-	}
-
-	if err := mc.meetingSessionRepo.UpdateProofs(
-		meetingID,
-		&uploadedSessionProofPath,
-		&uploadedSessionAttendanceProofPath,
-		nil,
-		nil,
-	); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to update meeting session proofs",
-			"error":   err.Error(),
-		})
-	}
-
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"status":  "success",
-		"message": "Session attendance proof uploaded successfully",
-	})
-}
-
-func (mc *MeetingSessionController) MentorAttend(c *fiber.Ctx) error {
-	meetingID, err := strconv.Atoi(c.Params("id"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Invalid meeting session ID",
-			"error":   "ID must be a number",
-		})
-	}
-
-	userIDStr := fmt.Sprintf("%v", c.Locals("userID"))
-	userID, err := strconv.ParseInt(userIDStr, 10, 32)
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Unauthorized",
-			"error":   "Invalid user ID",
-		})
-	}
-
-	if err := mc.meetingSessionRepo.VerifyAttendance(meetingID, int(userID), true); err != nil {
-		if err == sql.ErrNoRows {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"status":  "fail",
-				"message": "You have already attended this session or session does not exist",
-			})
-		}
-
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Cannot verify attendance",
-			"error":   "Mentor has already attended this session or session does not exist",
-		})
-	}
-
-	mentorAttendanceProof, err := c.FormFile("session_attendance_proof")
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Cannot parse request body",
-			"error":   err.Error(),
-		})
-	} else if mentorAttendanceProof == nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Mentor attendance proof image is required",
-		})
-	}
-
-	if !storage.IsValidImageExtension(mentorAttendanceProof.Filename) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Invalid mentor attendance proof image format",
-		})
-	}
-
-	maxSize := int64(0.5 * 1024 * 1024)
-	if mentorAttendanceProof.Size > maxSize {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Mentor attendance proof image size exceeds 500KB",
-		})
-	}
-
-	mentorAttendanceRequest := new(requests.MentorAttendanceRequest)
-	if validationError, err := validator.ValidateFormData(c, mentorAttendanceRequest); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Cannot parse request body",
-			"error":   err.Error(),
-		})
-	} else if len(validationError) > 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Bad request",
-			"errors":  validationError,
-		})
-	}
-
-
-	uploadedMentorAttendanceProofPath, err := storage.UploadFileToStorage(mentorAttendanceProof, "meeting_sessions", "MEET-SESSION", nil)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to upload mentor attendance proof image",
-			"error":   err.Error(),
-		})
-	}
-
-	if err := mc.meetingSessionRepo.UpdateProofs(
-		meetingID,
-		nil,
-		nil,
-		&uploadedMentorAttendanceProofPath,
-		mentorAttendanceRequest.SessionFeedback,
-	); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to update meeting session mentor attendance proof",
-			"error":   err.Error(),
-		})
-	}
-
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"status":  "success",
-		"message": "Mentor attendance proof uploaded successfully",
-	})
-}
-
-func (mc *MeetingSessionController) UpdateMeetingSessionStatus(c *fiber.Ctx) error {
-	meetingID, err := strconv.Atoi(c.Params("id"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Invalid meeting session ID",
-			"error":   "ID must be a number",
-		})
-	}
-
-	status := c.Params("status")
-	if status == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "fail",
-			"message": "Status cannot be empty",
-		})
-	}
-
-	if err := mc.meetingSessionRepo.UpdateStatus(meetingID, status); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to update meeting session status",
-			"error":   err.Error(),
-		})
-	}
-
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"status":  "success",
-		"message": "Meeting session status updated successfully",
 	})
 }

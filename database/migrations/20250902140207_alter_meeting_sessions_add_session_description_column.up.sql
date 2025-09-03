@@ -1,0 +1,1 @@
+ALTER TABLE meeting_sessions ADD COLUMN description TEXT;

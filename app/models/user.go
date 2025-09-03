@@ -2,16 +2,21 @@ package models
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
+	"github.com/studio-senkou/lentera-cendekia-be/utils/app"
+	"github.com/studio-senkou/lentera-cendekia-be/utils/auth"
+	gomail "github.com/studio-senkou/lentera-cendekia-be/utils/mail"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type User struct {
-	ID              int        `json:"id"`
+	ID              uint       `json:"id"`
 	Name            string     `json:"name"`
 	Email           string     `json:"email"`
 	Role            string     `json:"role"` // 'user', 'mentor', 'admin'
@@ -19,7 +24,8 @@ type User struct {
 	EmailVerifiedAt *time.Time `json:"email_verified_at,omitempty"`
 	IsActive        bool       `json:"is_active"`
 	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	UpdatedAt       *time.Time `json:"updated_at"`
+	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
 }
 
 func (u *User) HashPassword() ([]byte, error) {
@@ -110,8 +116,14 @@ func (r *UserRepository) GetUserCount() (map[string]int, error) {
 	return userCount, nil
 }
 
-func (r *UserRepository) GetUserDropdown() ([]*User, error) {
-	query := `SELECT id, name FROM users WHERE role = 'user' ORDER BY name`
+func (r *UserRepository) GetUserDropdown() ([]*Student, error) {
+	query := `
+		SELECT
+			s.id, u.name, u.email
+		FROM students s
+			LEFT OUTER JOIN users u ON u.id = s.user_id
+			WHERE u.role = 'user'
+	`
 
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -119,21 +131,34 @@ func (r *UserRepository) GetUserDropdown() ([]*User, error) {
 	}
 	defer rows.Close()
 
-	users := make([]*User, 0)
+	students := make([]*Student, 0)
+
 	for rows.Next() {
-		var user User
-		err := rows.Scan(&user.ID, &user.Name)
+		
+		student := new(Student)
+		user := new(User)
+
+		err := rows.Scan(&student.ID, &user.Name, &user.Email)
 		if err != nil {
 			return nil, err
 		}
-		users = append(users, &user)
+
+		student.User = *user
+		students = append(students, student)
 	}
 
-	return users, nil
+	return students, nil
 }
 
-func (r *UserRepository) GetMentorDropdown() ([]*User, error) {
-	query := `SELECT id, name FROM users WHERE role = 'mentor' ORDER BY name`
+func (r *UserRepository) GetMentorDropdown() ([]*Mentor, error) {
+	query := `
+		SELECT
+			m.id, u.name, u.email
+		FROM mentors m
+			LEFT OUTER JOIN users u ON u.id = m.user_id
+			WHERE u.role = 'mentor'
+			ORDER BY u.name
+	`
 
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -141,20 +166,25 @@ func (r *UserRepository) GetMentorDropdown() ([]*User, error) {
 	}
 	defer rows.Close()
 
-	users := make([]*User, 0)
+	mentors := make([]*Mentor, 0)
 	for rows.Next() {
-		var user User
-		err := rows.Scan(&user.ID, &user.Name)
+		
+		mentor := new(Mentor)
+		user := new(User)
+
+		err := rows.Scan(&mentor.ID, &user.Name, &user.Email)
 		if err != nil {
 			return nil, err
 		}
-		users = append(users, &user)
+
+		mentor.User = *user
+		mentors = append(mentors, mentor)
 	}
 
-	return users, nil
+	return mentors, nil
 }
 
-func (r *UserRepository) GetByID(id int) (*User, error) {
+func (r *UserRepository) GetByID(id uint) (*User, error) {
 	query := `SELECT id, name, email, role, email_verified_at, is_active, created_at, updated_at FROM users WHERE id = $1`
 
 	user := new(User)
@@ -182,8 +212,8 @@ func (r *UserRepository) GetByEmail(email string) (*User, error) {
 }
 
 func (r *UserRepository) Create(user *User) error {
-	query := `INSERT INTO users (name, email, password, role, created_at, updated_at) 
-			  VALUES ($1, $2, $3, $4, NOW(), NOW()) 
+	query := `INSERT INTO users (name, email, password, role, email_verified_at, is_active) 
+			  VALUES ($1, $2, $3, $4, $5, $6) 
 			  RETURNING id, created_at, updated_at`
 
 	hashedPassword, err := user.HashPassword()
@@ -191,7 +221,41 @@ func (r *UserRepository) Create(user *User) error {
 		return err
 	}
 
-	err = r.db.QueryRow(query, user.Name, user.Email, hashedPassword, user.Role).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
+	err = r.db.QueryRow(
+		query,
+		user.Name,
+		user.Email,
+		hashedPassword,
+		user.Role,
+		user.EmailVerifiedAt,
+		user.IsActive,
+	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
+	if err != nil {
+		return errors.New("failed to create user: " + err.Error())
+	}
+
+	if user.EmailVerifiedAt == nil && !user.IsActive {
+		activationToken, err := auth.GenerateOneTimeToken(user.ID, "account_activation", 24*time.Hour)
+		if err != nil {
+			return errors.New("failed to generate activation token")
+		}
+
+		email, err := gomail.NewMailFromTemplate(
+			user.Email,
+			"Welcome aboard to Lentera Cendekia",
+			"templates/emails/welcome.html",
+			fiber.Map{
+				"Name":           user.Name,
+				"ActivationLink": fmt.Sprintf("%s/activate?token=%s", app.GetEnv("APP_FE_URL", "http://localhost:3000"), activationToken.Token),
+			},
+		)
+		if err != nil {
+			return errors.New("failed to create welcome email")
+		}
+
+		email.Send()
+	}
+
 	return err
 }
 
@@ -202,9 +266,9 @@ func (r *UserRepository) Update(user *User) (string, error) {
 	}
 
 	var (
-		setClauses []string
-		args       []any
-		argIdx     = 1
+		setClauses   []string
+		args         []any
+		argIdx       = 1
 		emailChanged bool
 	)
 
@@ -253,7 +317,7 @@ func (r *UserRepository) Update(user *User) (string, error) {
 	return "", nil
 }
 
-func (r *UserRepository) UpdatePassword(id int, newPassword string) error {
+func (r *UserRepository) UpdatePassword(id uint, newPassword string) error {
 	query := `UPDATE users SET password = $1, updated_at = NOW() WHERE id = $2`
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
