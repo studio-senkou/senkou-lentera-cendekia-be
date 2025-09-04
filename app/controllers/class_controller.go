@@ -64,3 +64,26 @@ func (cc *ClassController) GetAllClasses(c *fiber.Ctx) error {
 		},
 	})
 }
+
+func (cc *ClassController) GetClassDropdown(c *fiber.Ctx) error {
+	classes, err := cc.classRepo.FindAllForDropdown()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to retrieve classes as dropdown",
+			"error":   err.Error(),
+		})
+	}
+
+	dropdowns := []fiber.Map{}
+	for _, class := range classes {
+		dropdowns = append(dropdowns, fiber.Map{
+			"id":   class.ID.String(),
+			"name": class.ClassName,
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Successfully retrieve all classes as dropdown",
+		"data": dropdowns,
+	})
+}

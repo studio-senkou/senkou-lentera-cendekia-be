@@ -11,4 +11,5 @@ func SetupClassRoutes(router fiber.Router) {
 
 	router.Post("/classes", middlewares.AuthMiddleware(), middlewares.RoleMiddleware("admin"), classController.CreateNewClass)
 	router.Get("/classes", middlewares.AuthMiddleware(), classController.GetAllClasses)
+	router.Get("/classes/dropdown", middlewares.AuthMiddleware(), classController.GetClassDropdown)
 }
