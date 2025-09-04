@@ -80,3 +80,33 @@ func (r *ClassRepository) FindAll() ([]*Class, error) {
 
 	return classes, nil
 }
+
+func (r *ClassRepository) FindAllForDropdown() ([]*Class, error) {
+	query := `
+		SELECT 
+			id,
+			classname
+		FROM classes
+	`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	classes := make([]*Class, 0)
+	for rows.Next() {
+		var class Class
+
+		err := rows.Scan(&class.ID, &class.ClassName)
+
+		if err != nil {
+			return nil, err
+		}
+
+		classes = append(classes, &class)
+	}
+
+	return classes, nil
+}
