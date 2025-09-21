@@ -96,7 +96,7 @@ func (mc *MeetingSessionController) CreateMeetingSession(c *fiber.Ctx) error {
 
 func (mc *MeetingSessionController) BulkCreateMeetingSessions(c *fiber.Ctx) error {
 	bulkCreateMeetingSessions := new(requests.BulkCreateMeetingSessionRequest)
-	
+
 	if validationError, err := validator.ValidateRequest(c, bulkCreateMeetingSessions); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "fail",
@@ -131,7 +131,7 @@ func (mc *MeetingSessionController) BulkCreateMeetingSessions(c *fiber.Ctx) erro
 				"error":   "Time must be in format HH:MM:SS or HH:MM",
 			})
 		}
-		
+
 		sessions[i] = &models.MeetingSession{
 			StudentID:   session.StudentID,
 			MentorID:    session.MentorID,
@@ -146,14 +146,14 @@ func (mc *MeetingSessionController) BulkCreateMeetingSessions(c *fiber.Ctx) erro
 
 	if err := mc.meetingSessionRepo.BulkCreateSessions(sessions); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status": "fail",
+			"status":  "fail",
 			"message": "Failed to bulk create meeting sessions",
-			"error": err.Error(),
+			"error":   err.Error(),
 		})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"status": "success",
+		"status":  "success",
 		"message": "Successfully created meeting sessions",
 	})
 }

@@ -117,10 +117,18 @@ func (r *MeetingSessionRepository) GetAll(userID uint) ([]*MeetingSession, error
 			LEFT JOIN users u ON u.id = s.user_id
 			LEFT JOIN mentors m ON m.id = ms.mentor_id
 			LEFT JOIN users mu ON mu.id = m.user_id
-		WHERE u.id = $1
 	`
 
-	rows, err := r.db.Query(query, userID)
+	var rows *sql.Rows
+	var err error
+
+	if userID != 0 {
+		query += " WHERE s.user_id = $1"
+		rows, err = r.db.Query(query, userID)
+	} else {
+		rows, err = r.db.Query(query)
+	}
+
 	if err != nil {
 		return nil, err
 	}
