@@ -1,4 +1,6 @@
 # Secret files
+app.key
+auth.key
 .env
 .env.*
 !.env.example

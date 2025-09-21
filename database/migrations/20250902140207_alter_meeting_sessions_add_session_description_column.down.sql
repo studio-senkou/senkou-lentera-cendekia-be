@@ -1,1 +1,0 @@
-ALTER TABLE meeting_sessions DROP COLUMN description;
