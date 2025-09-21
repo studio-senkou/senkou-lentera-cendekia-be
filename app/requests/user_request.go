@@ -14,9 +14,9 @@ type CreateNewStudentRequest struct {
 }
 
 type CreateNewMentorRequest struct {
-	Name  string `json:"name" validate:"required"`
-	Email string `json:"email" validate:"required,email"`
-	Class string `json:"class" validate:"required"`
+	Name    string   `json:"name" validate:"required"`
+	Email   string   `json:"email" validate:"required,email"`
+	Classes []string `json:"classes" validate:"required,dive"`
 }
 
 type UserActivationRequest struct {

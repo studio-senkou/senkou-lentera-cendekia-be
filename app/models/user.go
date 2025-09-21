@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -9,9 +10,11 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/hibiken/asynq"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/app"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/auth"
 	gomail "github.com/studio-senkou/lentera-cendekia-be/utils/mail"
+	"github.com/studio-senkou/lentera-cendekia-be/utils/queue"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -134,7 +137,7 @@ func (r *UserRepository) GetUserDropdown() ([]*Student, error) {
 	students := make([]*Student, 0)
 
 	for rows.Next() {
-		
+
 		student := new(Student)
 		user := new(User)
 
@@ -168,7 +171,7 @@ func (r *UserRepository) GetMentorDropdown() ([]*Mentor, error) {
 
 	mentors := make([]*Mentor, 0)
 	for rows.Next() {
-		
+
 		mentor := new(Mentor)
 		user := new(User)
 
@@ -231,6 +234,11 @@ func (r *UserRepository) Create(user *User) error {
 		user.IsActive,
 	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
+
+		if strings.Contains(err.Error(), "users_email_key") {
+			return ErrEmailAlreadyExists
+		}
+
 		return errors.New("failed to create user: " + err.Error())
 	}
 
@@ -240,20 +248,26 @@ func (r *UserRepository) Create(user *User) error {
 			return errors.New("failed to generate activation token")
 		}
 
-		email, err := gomail.NewMailFromTemplate(
-			user.Email,
-			"Welcome aboard to Lentera Cendekia",
-			"templates/emails/welcome.html",
-			fiber.Map{
-				"Name":           user.Name,
-				"ActivationLink": fmt.Sprintf("%s/activate?token=%s", app.GetEnv("APP_FE_URL", "http://localhost:3000"), activationToken.Token),
-			},
-		)
-		if err != nil {
-			return errors.New("failed to create welcome email")
-		}
+		client := queue.NewClient()
 
-		email.Send()
+		client.RegisterHandlerFunc("email:send", func(ctx context.Context, task *asynq.Task) error {
+
+			email, err := gomail.NewMailFromTemplate(
+				user.Email,
+				"Welcome aboard to Lentera Cendekia",
+				"templates/emails/welcome.html",
+				fiber.Map{
+					"Name":           user.Name,
+					"ActivationLink": fmt.Sprintf("%s/activate?token=%s", app.GetEnv("APP_FE_URL", "http://localhost:3000"), activationToken.Token),
+				},
+			)
+			if err != nil {
+				return errors.New("failed to create welcome email")
+			}
+
+			return email.Send()
+
+		})
 	}
 
 	return err

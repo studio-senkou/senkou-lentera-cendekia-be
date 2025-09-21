@@ -63,6 +63,12 @@ func (uc *UserController) CreateNewStudent(c *fiber.Ctx) error {
 	}
 
 	if err := uc.userRepo.Create(user); err != nil {
+		if err == models.ErrEmailAlreadyExists {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "Email already exists",
+			})
+		}
+
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to create user",
 		})
@@ -120,24 +126,31 @@ func (uc *UserController) CreateNewMentor(c *fiber.Ctx) error {
 	}
 
 	if err := uc.userRepo.Create(user); err != nil {
+		if err == models.ErrEmailAlreadyExists {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "Email already exists",
+			})
+		}
+
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to create user",
 		})
 	}
 
-	classID := uuid.MustParse(createNewMentorRequest.Class)
-	if _, err := uc.mentorRepo.AddIntoClass(user.ID, classID); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to add user into class",
-		})
+	for _, class := range createNewMentorRequest.Classes {
+		classID := uuid.MustParse(class)
+		if _, err := uc.mentorRepo.AddIntoClass(user.ID, classID); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to add user into class",
+			})
+		}
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"status":  "success",
 		"message": "Mentor registered successfully",
 		"data": fiber.Map{
-			"mentor_class_id": classID,
-			"user":            user,
+			"user": user,
 		},
 	})
 }
@@ -403,8 +416,8 @@ func (uc *UserController) GetUserAsDropdown(c *fiber.Ctx) error {
 	dropdownUsers := make([]fiber.Map, len(users))
 	for i, student := range users {
 		dropdownUsers[i] = fiber.Map{
-			"id":   student.ID,
-			"name": student.User.Name,
+			"id":    student.ID,
+			"name":  student.User.Name,
 			"email": student.User.Email,
 		}
 	}
@@ -429,8 +442,8 @@ func (uc *UserController) GetMentorDropdown(c *fiber.Ctx) error {
 	dropdownUsers := make([]fiber.Map, len(users))
 	for i, mentor := range users {
 		dropdownUsers[i] = fiber.Map{
-			"id":   mentor.ID,
-			"name": mentor.User.Name,
+			"id":    mentor.ID,
+			"name":  mentor.User.Name,
 			"email": mentor.User.Email,
 		}
 	}
