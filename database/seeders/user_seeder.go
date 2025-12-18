@@ -24,5 +24,18 @@ func SeedUsers(db *sql.DB) error {
 		return fmt.Errorf("failed to create administrator user: %w", err)
 	}
 
+	administrator2 := &models.User{
+		Name:            "Lentera Cendekia",
+		Email:           "lbblenteracendekia@gmail.com",
+		Password:        "12345678",
+		Role:            "admin",
+		EmailVerifiedAt: func() *time.Time { t := time.Now(); return &t }(),
+		IsActive:        true,
+	}
+
+	if err := userRepository.Create(administrator2); err != nil {
+		return fmt.Errorf("failed to create second administrator user: %w", err)
+	}
+
 	return nil
 }
