@@ -5,9 +5,11 @@ services:
       dockerfile: Dockerfile
     container_name: senkou-lentera-cendekia-api-prod
     restart: unless-stopped
+    expose:
+      - "8080"
     environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
+      - DB_HOST=pgbouncer
+      - DB_PORT=6432
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     env_file:
@@ -15,17 +17,50 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_started
       redis:
         condition: service_started
     networks:
       - senkou_lentera_cendekia_network
 
+  nginx:
+    image: nginx:alpine
+    container_name: senkou-lentera-cendekia-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./.docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./.docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+      - DB_DOMAIN=${DB_DOMAIN:-db.localhost}
+    depends_on:
+      - app
+      - pgadmin
+    networks:
+      - senkou_lentera_cendekia_network
+    command: '/bin/sh -c ''while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g "daemon off;"'''
+
+  certbot:
+    image: certbot/certbot
+    container_name: senkou-lentera-cendekia-certbot
+    restart: unless-stopped
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
   postgres:
     image: postgres:17-alpine
     container_name: senkou-lentera-cendekia-postgres-prod
     restart: unless-stopped
-    ports:
-      - "${DB_PORT:-5432}:5432"
+    expose:
+      - "5432"
     environment:
       - POSTGRES_USER=${DB_USERNAME:-postgres}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
@@ -45,6 +80,45 @@ services:
     networks:
       - senkou_lentera_cendekia_network
 
+  pgbouncer:
+    build:
+      context: ./.docker/database/pgbouncer
+      dockerfile: Dockerfile
+    container_name: senkou-lentera-cendekia-pgbouncer
+    restart: unless-stopped
+    expose:
+      - "6432"
+    ports:
+      - "${PGBOUNCER_PORT:-6432}:6432"
+    environment:
+      - POSTGRES_USER=${DB_USERNAME:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - senkou_lentera_cendekia_network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: senkou-lentera-cendekia-pgadmin
+    restart: unless-stopped
+    expose:
+      - "80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@example.com}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-changeme}
+      - PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION=True
+      - PGADMIN_CONFIG_LOGIN_BANNER="Authorized users only!"
+      - PGADMIN_CONFIG_CONSOLE_LOG_LEVEL=10
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./.docker/database/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      - pgbouncer
+    networks:
+      - senkou_lentera_cendekia_network
+
   redis:
     image: redis:latest
     container_name: senkou-lentera-cendekia-redis-prod
@@ -59,20 +133,39 @@ services:
     networks:
       - senkou_lentera_cendekia_network
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: senkou-lentera-cendekia-cloudflared
-    restart: unless-stopped
-    command: tunnel --no-autoupdate --protocol http2 run --token ${TUNNEL_TOKEN:-}
+  backup:
+    image: postgres:17-alpine
+    container_name: senkou-lentera-cendekia-backup
+    restart: "no"
+    profiles:
+      - backup
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_DATABASE=${DB_DATABASE:-senkou_lentera_cendekia}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
+      - AWS_ACCESS_KEY_ID=${AWS_S3_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_S3_SECRET_ACCESS_KEY:-}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-}
+      - AWS_DEFAULT_REGION=${AWS_S3_REGION:-}
+    volumes:
+      - ./scripts/backup-database.sh:/backup.sh:ro
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - senkou_lentera_cendekia_network
-    depends_on:
-      - app
+    entrypoint: ["/bin/sh", "/backup.sh"]
 
 volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  pgadmin_data:
     driver: local
 
 networks:

@@ -7,3 +7,9 @@ auth.key
 
 # Air verse
 /tmp
+
+# SSL Certificates
+/certbot
+
+# Database Backups
+/backups
