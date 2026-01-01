@@ -1,4 +1,4 @@
-.PHONY=generate-app-key generate-auth-key migrations-create migrate-up migrate-down seed rebuild-prod rebuild-dev
+.PHONY=generate-app-key generate-auth-key migrations-create migrate-up migrate-down seed rebuild-prod rebuild-dev deploy-prod
 
 # Comment if want to rebuild docker containers to remove collision with environment variables
 ifneq (,$(wildcard ./.env))
@@ -44,8 +44,14 @@ migrations-create:
 migrate-up:
 	@dbmate -u $$(grep '^DB_URL=' .env | cut -d '=' -f2-) --migrations-dir=./database/migrations --schema-file=./database/migrations/schema.sql up
 
+migrate-prod-up:
+	@docker compose run --rm dbmate up
+
 migrate-down:
 	@dbmate -u $$(grep '^DB_URL=' .env | cut -d '=' -f2-) --migrations-dir=./database/migrations --schema-file=./database/migrations/schema.sql down
+
+migrate-prod-down:
+	@docker compose run --rm dbmate down
 
 seed:
 	@echo "Seeding database.."
@@ -65,3 +71,4 @@ rebuild-dev:
 	@docker compose -f docker-compose.dev.yml -p senkou-lentera-cendekia-api-dev build --no-cache
 	@docker compose -f docker-compose.dev.yml -p senkou-lentera-cendekia-api-dev up -d --force-recreate
 	@echo "Rebuild for development completed."
+	
