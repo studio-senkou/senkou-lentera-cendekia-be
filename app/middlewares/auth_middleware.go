@@ -88,10 +88,9 @@ func AuthMiddleware() fiber.Handler {
 		}
 
 		if session, err := authRepository.GetTokenByUserID(userID); err != nil || session == nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"status":  "fail",
-				"message": "Invalid session",
-				"error":   err.Error(),
+				"message": "Session already invalidated or user logged out, please login again",
 			})
 		}
 

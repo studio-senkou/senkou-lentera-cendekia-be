@@ -12,14 +12,14 @@ import (
 )
 
 type OneTimeToken struct {
-	UserID    int       `json:"user_id"`
+	UserID    uint      `json:"user_id"`
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expires_at"`
 	Purpose   string    `json:"purpose"` // "password_reset", "email_verification", "account_activation"
 	Used      bool      `json:"used"`
 }
 
-func GenerateOneTimeToken(userID int, purpose string, expiry time.Duration) (*OneTimeToken, error) {
+func GenerateOneTimeToken(userID uint, purpose string, expiry time.Duration) (*OneTimeToken, error) {
 	log.Printf("[TOKEN] Generating one-time token for userID: %d, purpose: %s, expiry: %v", userID, purpose, expiry)
 
 	bytes := make([]byte, 32)

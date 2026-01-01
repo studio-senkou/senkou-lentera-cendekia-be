@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/studio-senkou/lentera-cendekia-be/app/models"
 	"github.com/studio-senkou/lentera-cendekia-be/app/requests"
 	"github.com/studio-senkou/lentera-cendekia-be/database"
@@ -17,9 +18,12 @@ import (
 )
 
 type UserController struct {
-	jwtManager 	*auth.JwtManager
-	userRepo 	*models.UserRepository
-	authRepo 	*models.AuthenticationRepository
+	jwtManager      *auth.JwtManager
+	userRepo        *models.UserRepository
+	studentRepo     *models.StudentRepository
+	studentPlanRepo *models.StudentPlanRepository
+	mentorRepo      *models.MentorRepository
+	authRepo        *models.AuthenticationRepository
 }
 
 func NewUserController() *UserController {
@@ -27,24 +31,19 @@ func NewUserController() *UserController {
 	authSecret := app.GetEnv("AUTH_SECRET", "")
 
 	return &UserController{
-		jwtManager: auth.NewJwtManager(authSecret),
-		userRepo: models.NewUserRepository(db),
-		authRepo: models.NewAuthenticationRepository(db),
+		jwtManager:      auth.NewJwtManager(authSecret),
+		userRepo:        models.NewUserRepository(db),
+		studentRepo:     models.NewStudentRepository(db),
+		studentPlanRepo: models.NewStudentPlanRepository(db),
+		mentorRepo:      models.NewMentorRepository(db),
+		authRepo:        models.NewAuthenticationRepository(db),
 	}
 }
 
-func (uc *UserController) CreateMentor(c *fiber.Ctx) error {
-	return uc.CreateUser(c, "mentor")
-}
+func (uc *UserController) CreateNewStudent(c *fiber.Ctx) error {
+	createNewStudentRequest := new(requests.CreateNewStudentRequest)
 
-func (uc *UserController) CreateStudent(c *fiber.Ctx) error {
-	return uc.CreateUser(c, "user")
-}
-
-func (uc *UserController) CreateUser(c *fiber.Ctx, role string) error {
-	createUserRequest := new(requests.CreateUserRequest)
-
-	if validationError, err := validator.ValidateRequest(c, createUserRequest); err != nil {
+	if validationError, err := validator.ValidateRequest(c, createNewStudentRequest); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"message": "Cannot parse request body",
 			"error":   err.Error(),
@@ -57,45 +56,99 @@ func (uc *UserController) CreateUser(c *fiber.Ctx, role string) error {
 	}
 
 	user := &models.User{
-		Name:     createUserRequest.Name,
-		Email:    createUserRequest.Email,
+		Name:     createNewStudentRequest.Name,
+		Email:    createNewStudentRequest.Email,
 		Password: "12345678",
-		Role:     role,
+		Role:     "user",
 	}
 
 	if err := uc.userRepo.Create(user); err != nil {
+		if err == models.ErrEmailAlreadyExists {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "Email already exists",
+			})
+		}
+
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to create user",
 		})
 	}
 
-	activationToken, err := auth.GenerateOneTimeToken(user.ID, "account_activation", 24*time.Hour)
+	classID := uuid.MustParse(createNewStudentRequest.Class)
+	student, err := uc.studentRepo.AddIntoClass(user.ID, classID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to generate activation token",
+			"error": "Failed to add user into class",
 		})
 	}
 
-	email, err := gomail.NewMailFromTemplate(
-		user.Email,
-		"Welcome aboard to Lentera Cendekia",
-		"templates/emails/welcome.html",
-		fiber.Map{
-			"Name":           user.Name,
-			"ActivationLink": fmt.Sprintf("%s/activate?token=%s", app.GetEnv("APP_FE_URL", "http://localhost:3000"), activationToken.Token),
-		},
-	)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to generate email from template",
-		})
+	studentPlan := &models.StudentPlan{
+		StudentID:     student.ID,
+		TotalSessions: createNewStudentRequest.MinimalSessions,
 	}
 
-	email.Send()
+	if err := uc.studentPlanRepo.CreateNewStudentPlan(studentPlan); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to create student plan",
+		})
+	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"status":  "success",
-		"message": "Email verification sent successfully, please check your user email inbox",
+		"message": "Student registered successfully",
+		"data": fiber.Map{
+			"student_class_id": classID,
+			"user":             user,
+		},
+	})
+}
+
+func (uc *UserController) CreateNewMentor(c *fiber.Ctx) error {
+	createNewMentorRequest := new(requests.CreateNewMentorRequest)
+
+	if validationError, err := validator.ValidateRequest(c, createNewMentorRequest); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Cannot parse request body",
+			"error":   err.Error(),
+		})
+	} else if len(validationError) > 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"errors":  validationError,
+		})
+	}
+
+	user := &models.User{
+		Name:     createNewMentorRequest.Name,
+		Email:    createNewMentorRequest.Email,
+		Password: "12345678",
+		Role:     "mentor",
+	}
+
+	if err := uc.userRepo.Create(user); err != nil {
+		if err == models.ErrEmailAlreadyExists {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "Email already exists",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to create user",
+		})
+	}
+
+	for _, class := range createNewMentorRequest.Classes {
+		classID := uuid.MustParse(class)
+		if _, err := uc.mentorRepo.AddIntoClass(user.ID, classID); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to add user into class",
+			})
+		}
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"status":  "success",
+		"message": "Mentor registered successfully",
 		"data": fiber.Map{
 			"user": user,
 		},
@@ -133,7 +186,6 @@ func (uc *UserController) ActivateUser(c *fiber.Ctx) error {
 			"error":   "Failed to retrieve user: " + err.Error(),
 		})
 	}
-
 	if user == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"status":  "fail",
@@ -172,7 +224,7 @@ func (uc *UserController) ActivateUser(c *fiber.Ctx) error {
 	// Authenticate the user after activation
 	accessToken, err := uc.jwtManager.GenerateToken(auth.Payload{
 		UserID: user.ID,
-		Role: user.Role,
+		Role:   user.Role,
 	}, time.Now().Add(24*time.Hour))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -184,7 +236,7 @@ func (uc *UserController) ActivateUser(c *fiber.Ctx) error {
 
 	refreshToken, err := uc.jwtManager.GenerateToken(auth.Payload{
 		UserID: user.ID,
-		Role: user.Role,
+		Role:   user.Role,
 	}, time.Now().Add(30*24*time.Hour))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -198,10 +250,10 @@ func (uc *UserController) ActivateUser(c *fiber.Ctx) error {
 		"status":  "success",
 		"message": "User activated successfully",
 		"data": fiber.Map{
-			"active_role": user.Role,
-			"access_token": accessToken.Token,
-			"access_token_expiry": accessToken.ExpiresAt,
-			"refresh_token": refreshToken.Token,
+			"active_role":          user.Role,
+			"access_token":         accessToken.Token,
+			"access_token_expiry":  accessToken.ExpiresAt,
+			"refresh_token":        refreshToken.Token,
 			"refresh_token_expiry": refreshToken.ExpiresAt,
 		},
 	})
@@ -215,7 +267,7 @@ func (uc *UserController) ForceActivateUser(c *fiber.Ctx) error {
 		})
 	}
 
-	user, err := uc.userRepo.GetByID(userID)
+	user, err := uc.userRepo.GetByID(uint(userID))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to retrieve user",
@@ -270,14 +322,14 @@ func (uc *UserController) GetAllUsers(c *fiber.Ctx) error {
 }
 
 func (uc *UserController) GetUser(c *fiber.Ctx) error {
-	id, err := strconv.Atoi(c.Params("id"))
+	userID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid user ID",
 		})
 	}
 
-	user, err := uc.userRepo.GetByID(id)
+	user, err := uc.userRepo.GetByID(uint(userID))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to retrieve user",
@@ -310,7 +362,7 @@ func (uc *UserController) GetUserMe(c *fiber.Ctx) error {
 		})
 	}
 
-	user, err := uc.userRepo.GetByID(int(userID))
+	user, err := uc.userRepo.GetByID(uint(userID))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
@@ -362,10 +414,11 @@ func (uc *UserController) GetUserAsDropdown(c *fiber.Ctx) error {
 	}
 
 	dropdownUsers := make([]fiber.Map, len(users))
-	for i, user := range users {
+	for i, student := range users {
 		dropdownUsers[i] = fiber.Map{
-			"id":   user.ID,
-			"name": user.Name,
+			"id":    student.ID,
+			"name":  student.User.Name,
+			"email": student.User.Email,
 		}
 	}
 
@@ -387,10 +440,11 @@ func (uc *UserController) GetMentorDropdown(c *fiber.Ctx) error {
 	}
 
 	dropdownUsers := make([]fiber.Map, len(users))
-	for i, user := range users {
+	for i, mentor := range users {
 		dropdownUsers[i] = fiber.Map{
-			"id":   user.ID,
-			"name": user.Name,
+			"id":    mentor.ID,
+			"name":  mentor.User.Name,
+			"email": mentor.User.Email,
 		}
 	}
 
@@ -424,10 +478,11 @@ func (uc *UserController) UpdateUser(c *fiber.Ctx) error {
 		})
 	}
 
-	user := new(models.User)
-	user.ID = id
-	user.Name = updateUserRequest.Name
-	user.Email = updateUserRequest.Email
+	user := &models.User{
+		ID:    uint(id),
+		Name:  updateUserRequest.Name,
+		Email: updateUserRequest.Email,
+	}
 
 	updatedEmail, err := uc.userRepo.Update(user)
 	if err != nil {
@@ -522,8 +577,8 @@ func (uc *UserController) ResetPassword(c *fiber.Ctx) error {
 		fmt.Sprintf("Reset Password for %s", user.Name),
 		"templates/emails/reset_password.html",
 		fiber.Map{
-			"Name":           user.Name,
-			"ResetLink": fmt.Sprintf("%s/reset-password?token=%s", app.GetEnv("APP_FE_URL", "http://localhost:3000"), resetToken.Token),
+			"Name":       user.Name,
+			"ResetLink":  fmt.Sprintf("%s/reset-password?token=%s", app.GetEnv("APP_FE_URL", "http://localhost:3000"), resetToken.Token),
 			"ExpiryTime": resetToken.ExpiresAt.Format(time.RFC1123),
 		},
 	)
@@ -617,7 +672,7 @@ func (uc *UserController) UpdateUserPassword(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := uc.userRepo.UpdatePassword(int(userID), updatePasswordRequest.NewPassword); err != nil {
+	if err := uc.userRepo.UpdatePassword(uint(userID), updatePasswordRequest.NewPassword); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "fail",
 			"message": "Failed to update password",

@@ -274,7 +274,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 	}
 
 	newPayload := auth.Payload{
-		UserID: int(userID),
+		UserID: uint(userID),
 		Role:   payloadMap["role"].(string),
 	}
 
@@ -297,7 +297,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 	}
 
 	if err := ac.authRepo.UpdateOrCreate(&models.UserHasToken{
-		UserID: int(userID),
+		UserID: uint(userID),
 		Token:  newRefreshToken.Token,
 	}); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{

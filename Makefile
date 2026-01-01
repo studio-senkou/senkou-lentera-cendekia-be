@@ -1,18 +1,18 @@
-.PHONY=migrate-up migrate-up-force migrate-down generate-app-key create-migration migrate-fresh seed rebuild-prod rebuild-dev
+.PHONY=generate-app-key generate-auth-key migrations-create migrate-up migrate-down seed rebuild-prod rebuild-dev
 
 # Comment if want to rebuild docker containers to remove collision with environment variables
-# ifneq (,$(wildcard ./.env))
-# DB_USERNAME := $(shell grep '^DB_USERNAME=' .env | cut -d '=' -f2-)
-# DB_PASSWORD := $(shell grep '^DB_PASSWORD=' .env | cut -d '=' -f2-)
-# DB_HOST := $(shell grep '^DB_HOST=' .env | cut -d '=' -f2-)
-# DB_PORT := $(shell grep '^DB_PORT=' .env | cut -d '=' -f2-)
-# DB_DATABASE := $(shell grep '^DB_DATABASE=' .env | cut -d '=' -f2-)
-# export DB_USERNAME
-# export DB_PASSWORD
-# export DB_HOST
-# export DB_PORT
-# export DB_DATABASE
-# endif
+ifneq (,$(wildcard ./.env))
+DB_USERNAME := $(shell grep '^DB_USERNAME=' .env | cut -d '=' -f2-)
+DB_PASSWORD := $(shell grep '^DB_PASSWORD=' .env | cut -d '=' -f2-)
+DB_HOST := $(shell grep '^DB_HOST=' .env | cut -d '=' -f2-)
+DB_PORT := $(shell grep '^DB_PORT=' .env | cut -d '=' -f2-)
+DB_DATABASE := $(shell grep '^DB_DATABASE=' .env | cut -d '=' -f2-)
+export DB_USERNAME
+export DB_PASSWORD
+export DB_HOST
+export DB_PORT
+export DB_DATABASE
+endif
 
 generate-app-key:
 	@echo "Generating application key.."
@@ -24,33 +24,28 @@ generate-app-key:
 		echo "APP_KEY=$$APP_KEY" >> .env; \
 	fi
 
+generate-auth-secret:
+	@echo "Generating application auth secret.."
+	@head -c 64 /dev/urandom | base64 | tr -d '\n' > auth.key
+	@AUTH_SECRET=$$(cat auth.key); \
+	if grep -q '^AUTH_SECRET=' .env; then \
+		sed -i "s/^AUTH_SECRET=.*/AUTH_SECRET=$$AUTH_SECRET/" .env; \
+	else \
+		echo "AUTH_SECRET=$$AUTH_SECRET" >> .env; \
+	fi
+
+migrations-create:
+	@if [ -z "$(NAME)" ]; then \
+		echo "Error: Please provide a migration name using 'make migrations-create name=your_migration_name'"; \
+		exit 1; \
+	fi
+	@dbmate -u $$(grep '^DB_URL=' .env | cut -d '=' -f2-) --migrations-dir=./database/migrations new $(NAME)
+
 migrate-up:
-	@echo "Migrating database up.."
-	@DB_PASSWORD_ENCODED=$$(printf '%s' '$(DB_PASSWORD)' | sed -e 's/!/%21/g' -e 's/#/%23/g' -e 's/@/%40/g' -e 's/\$$/%24/g'); \
-	DB_URL="postgres://$(DB_USERNAME):$$DB_PASSWORD_ENCODED@$(DB_HOST):$(DB_PORT)/$(DB_DATABASE)?sslmode=disable"; \
-	migrate -path database/migrations -database "$$DB_URL" up
+	@dbmate -u $$(grep '^DB_URL=' .env | cut -d '=' -f2-) --migrations-dir=./database/migrations --schema-file=./database/migrations/schema.sql up
 
 migrate-down:
-	@echo "Migrating database down.."
-	@DB_PASSWORD_ENCODED=$$(printf '%s' '$(DB_PASSWORD)' | sed -e 's/!/%21/g' -e 's/#/%23/g' -e 's/@/%40/g' -e 's/\$$/%24/g'); \
-	DB_URL="postgres://$(DB_USERNAME):$$DB_PASSWORD_ENCODED@$(DB_HOST):$(DB_PORT)/$(DB_DATABASE)?sslmode=disable"; \
-	migrate -path database/migrations -database "$$DB_URL" down
-
-create-migration:
-	@echo "Creating new migration file.."
-	@read -p "Enter migration name: " MIGRATION_NAME; \
-	if [ -z "$$MIGRATION_NAME" ]; then \
-		echo "Migration name cannot be empty"; \
-		exit 1; \
-	fi; \
-	migrate create -ext sql -dir database/migrations "$$MIGRATION_NAME"
-
-migrate-fresh:
-	@echo "Running fresh migration.."
-	@DB_PASSWORD_ENCODED=$$(printf '%s' '$(DB_PASSWORD)' | sed -e 's/!/%21/g' -e 's/#/%23/g' -e 's/@/%40/g' -e 's/\$$/%24/g'); \
-	DB_URL="postgres://$(DB_USERNAME):$$DB_PASSWORD_ENCODED@$(DB_HOST):$(DB_PORT)/$(DB_DATABASE)?sslmode=disable"; \
-	migrate -path database/migrations -database "$$DB_URL" down -all; \
-	migrate -path database/migrations -database "$$DB_URL" up
+	@dbmate -u $$(grep '^DB_URL=' .env | cut -d '=' -f2-) --migrations-dir=./database/migrations --schema-file=./database/migrations/schema.sql down
 
 seed:
 	@echo "Seeding database.."
