@@ -1,7 +1,7 @@
 server {
-    listen 80;
-    listen [::]:80;
-    server_name _;
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name ${DOMAIN};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -13,11 +13,11 @@ server {
 }
 
 server {
-    listen 443 ssl;
+    listen 443 ssl default_server;
     http2 on;
-    listen [::]:443 ssl;
+    listen [::]:443 ssl default_server;
     http2 on;
-    server_name _;
+    server_name ${DOMAIN};
 
     ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
