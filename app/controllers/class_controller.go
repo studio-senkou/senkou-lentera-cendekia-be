@@ -1,7 +1,9 @@
 package controllers
 
 import (
+	"database/sql"
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/studio-senkou/lentera-cendekia-be/app/models"
 	"github.com/studio-senkou/lentera-cendekia-be/app/requests"
 	"github.com/studio-senkou/lentera-cendekia-be/database"
@@ -89,5 +91,76 @@ func (cc *ClassController) GetClassDropdown(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Successfully retrieve all classes as dropdown",
 		"data": dropdowns,
+	})
+}
+
+func (cc *ClassController) UpdateClass(c *fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid class ID",
+			"error":   err.Error(),
+		})
+	}
+
+	updateClassRequest := new(requests.UpdateClassRequest)
+	if validationError, err := validator.ValidateRequest(c, updateClassRequest); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Cannot parse request body",
+			"error":   err.Error(),
+		})
+	} else if len(validationError) > 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"errors":  validationError,
+		})
+	}
+
+	class, err := cc.classRepo.Update(classID, updateClassRequest.ClassName)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Class not found",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to update class",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Successfully update class",
+		"data": fiber.Map{
+			"class": class,
+		},
+	})
+}
+
+func (cc *ClassController) DeleteClass(c *fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid class ID",
+			"error":   err.Error(),
+		})
+	}
+
+	if err := cc.classRepo.Delete(classID); err != nil {
+		if err == sql.ErrNoRows {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Class not found",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to delete class",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Successfully delete class",
 	})
 }

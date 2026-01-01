@@ -56,7 +56,8 @@ func (r *ClassRepository) FindAll() ([]*Class, error) {
 			id,
 			classname,
 			created_at
-		FROM classes	
+		FROM classes
+		WHERE deleted_at IS NULL	
 	`
 
 	rows, err := r.db.Query(query)
@@ -87,6 +88,7 @@ func (r *ClassRepository) FindAllForDropdown() ([]*Class, error) {
 			id,
 			classname
 		FROM classes
+		WHERE deleted_at IS NULL
 	`
 
 	rows, err := r.db.Query(query)
@@ -109,4 +111,44 @@ func (r *ClassRepository) FindAllForDropdown() ([]*Class, error) {
 	}
 
 	return classes, nil
+}
+
+func (r *ClassRepository) Update(id uuid.UUID, className string) (*Class, error) {
+	query := `
+		UPDATE classes
+		SET classname = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2 AND deleted_at IS NULL
+		RETURNING id, classname, created_at
+	`
+
+	class := new(Class)
+	if err := r.db.QueryRow(query, className, id).Scan(&class.ID, &class.ClassName, &class.CreatedAt); err != nil {
+		return nil, err
+	}
+
+	return class, nil
+}
+
+func (r *ClassRepository) Delete(id uuid.UUID) error {
+	query := `
+		UPDATE classes
+		SET deleted_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND deleted_at IS NULL
+	`
+
+	result, err := r.db.Exec(query, id)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
 }
