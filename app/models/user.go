@@ -156,11 +156,8 @@ func (r *UserRepository) GetUserDropdown() ([]*Student, error) {
 func (r *UserRepository) GetMentorDropdown() ([]*Mentor, error) {
 	query := `
 		SELECT
-			m.id, u.name, u.email
-		FROM mentors m
-			LEFT OUTER JOIN users u ON u.id = m.user_id
-			WHERE u.role = 'mentor'
-			ORDER BY u.name
+			id, name, email
+		FROM users WHERE role = 'mentor'
 	`
 
 	rows, err := r.db.Query(query)
