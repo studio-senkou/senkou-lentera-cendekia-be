@@ -33,7 +33,7 @@ services:
       - "443:443"
     volumes:
       - ./.docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./.docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./.docker/nginx/templates:/etc/nginx/templates:ro
       - ./certbot/conf:/etc/letsencrypt:ro
       - ./certbot/www:/var/www/certbot:ro
     environment:
@@ -44,7 +44,16 @@ services:
       - pgadmin
     networks:
       - senkou_lentera_cendekia_network
-    command: '/bin/sh -c ''while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g "daemon off;"'''
+    command:
+      - /bin/sh
+      - -c
+      - |
+        while :; do
+          sleep 6h & wait $${!}
+          nginx -s reload
+        done &
+
+        nginx -g "daemon off;"
 
   certbot:
     image: certbot/certbot
