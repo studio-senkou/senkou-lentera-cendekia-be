@@ -13,3 +13,6 @@ auth.key
 
 # Database Backups
 /backups
+
+# IDE
+.idea

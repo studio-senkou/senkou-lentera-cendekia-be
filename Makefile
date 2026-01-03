@@ -1,4 +1,4 @@
-.PHONY=generate-app-key generate-auth-key migrations-create migrate-up migrate-down seed rebuild-prod rebuild-dev deploy-prod
+.PHONY=generate-app-key generate-auth-key migrations-create migrate-up migrate-down seed rebuild-prod rebuild-dev deploy-prod build-nginx build-postgres build-redis build-all
 
 # Comment if want to rebuild docker containers to remove collision with environment variables
 ifneq (,$(wildcard ./.env))
@@ -71,4 +71,22 @@ rebuild-dev:
 	@docker compose -f docker-compose.dev.yml -p senkou-lentera-cendekia-api-dev build --no-cache
 	@docker compose -f docker-compose.dev.yml -p senkou-lentera-cendekia-api-dev up -d --force-recreate
 	@echo "Rebuild for development completed."
-	
+
+# Individual Docker image builds
+build-nginx:
+	@echo "Building Nginx image..."
+	@docker build -t senkou-lentera-cendekia-nginx:latest ./.docker/nginx
+	@echo "Nginx image built successfully."
+
+build-postgres:
+	@echo "Building PostgreSQL image..."
+	@docker build -t senkou-lentera-cendekia-postgres:latest ./.docker/postgres
+	@echo "PostgreSQL image built successfully."
+
+build-redis:
+	@echo "Building Redis image..."
+	@docker build -t senkou-lentera-cendekia-redis:latest ./.docker/redis
+	@echo "Redis image built successfully."
+
+build-all: build-nginx build-postgres build-redis
+	@echo "All custom images built successfully."
