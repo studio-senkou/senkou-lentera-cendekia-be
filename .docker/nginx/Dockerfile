@@ -29,8 +29,6 @@ RUN mkdir -p /var/log/nginx \
     && touch /var/log/nginx/access.log \
     && touch /var/log/nginx/error.log
 
-RUN nginx -t
-
 EXPOSE 80 443
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
