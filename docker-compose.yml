@@ -100,7 +100,7 @@ services:
       - .:/app
     environment:
       DB_URL: ${DB_URL}
-    command: go run database/seeders/database_seeder.go
+    command: go run cmd/seeder/main.go
     networks:
       - senkou_lentera_cendekia_network
 
