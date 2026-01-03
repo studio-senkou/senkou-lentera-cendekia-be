@@ -9,8 +9,8 @@ type MeetingSession struct {
 	ID          uint       `json:"id"`
 	StudentID   uint       `json:"student_id"`
 	Student     Student    `json:"student"`
-	MentorID    uint       `json:"mentor_id"`
-	Mentor      Mentor     `json:"mentor"`
+	MentorID    uint       `json:"mentor_id"` // References users.id (mentor user)
+	MentorUser  User       `json:"mentor"`    // The mentor user directly
 	Date        DateOnly   `json:"session_date"`
 	Time        TimeOnly   `json:"session_time"`
 	Duration    uint       `json:"duration_minutes"`
@@ -115,8 +115,7 @@ func (r *MeetingSessionRepository) GetAll(userID uint) ([]*MeetingSession, error
 		FROM meeting_sessions ms
 			LEFT JOIN students s ON s.id = ms.student_id
 			LEFT JOIN users u ON u.id = s.user_id
-			LEFT JOIN mentors m ON m.id = ms.mentor_id
-			LEFT JOIN users mu ON mu.id = m.user_id
+			LEFT JOIN users mu ON mu.id = ms.mentor_id
 	`
 
 	var rows *sql.Rows
@@ -139,19 +138,19 @@ func (r *MeetingSessionRepository) GetAll(userID uint) ([]*MeetingSession, error
 	for rows.Next() {
 		session := new(MeetingSession)
 		student := new(Student)
-		mentor := new(Mentor)
+		mentorUser := new(User)
 
 		if err := rows.Scan(
 			&session.ID, &session.StudentID, &session.MentorID, &session.Date, &session.Time,
 			&session.Duration, &session.Status, &session.Note, &session.Description, &session.CreatedAt, &session.UpdatedAt, &session.DeletedAt,
 			&student.ID, &student.User.Name, &student.User.Email,
-			&mentor.ID, &mentor.User.Name, &mentor.User.Email,
+			&mentorUser.ID, &mentorUser.Name, &mentorUser.Email,
 		); err != nil {
 			return nil, err
 		}
 
 		session.Student = *student
-		session.Mentor = *mentor
+		session.MentorUser = *mentorUser
 
 		meetingSessions = append(meetingSessions, session)
 	}
@@ -168,8 +167,7 @@ func (r *MeetingSessionRepository) GetByID(id uint) (*MeetingSession, error) {
 		FROM meeting_sessions ms
 			LEFT JOIN students s ON s.id = ms.student_id
 			LEFT JOIN users u ON u.id = s.user_id
-			LEFT JOIN mentors m ON m.id = ms.mentor_id
-			LEFT JOIN users mu ON mu.id = m.user_id
+			LEFT JOIN users mu ON mu.id = ms.mentor_id
 		WHERE ms.id = $1
 	`
 
@@ -177,19 +175,19 @@ func (r *MeetingSessionRepository) GetByID(id uint) (*MeetingSession, error) {
 
 	session := new(MeetingSession)
 	student := new(Student)
-	mentor := new(Mentor)
+	mentorUser := new(User)
 
 	if err := row.Scan(
 		&session.ID, &session.StudentID, &session.MentorID, &session.Date, &session.Time,
 		&session.Duration, &session.Status, &session.Note, &session.Description, &session.CreatedAt, &session.UpdatedAt, &session.DeletedAt,
 		&student.ID, &student.User.Name, &student.User.Email,
-		&mentor.ID, &mentor.User.Name, &mentor.User.Email,
+		&mentorUser.ID, &mentorUser.Name, &mentorUser.Email,
 	); err != nil {
 		return nil, err
 	}
 
 	session.Student = *student
-	session.Mentor = *mentor
+	session.MentorUser = *mentorUser
 
 	return session, nil
 }
