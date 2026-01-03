@@ -79,18 +79,14 @@ services:
   dbmate:
     image: amacneil/dbmate
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       DATABASE_URL: ${DB_URL}
     volumes:
       - ./database/migrations:/db/migrations
     networks:
       - senkou_lentera_cendekia_network
-    depends_on:
-      app:
-        condition: service_started
-      postgres:
-        condition: service_healthy
 
   seeder:
     image: golang:1.24-alpine
