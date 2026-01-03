@@ -86,12 +86,20 @@ services:
       - ./database/migrations:/db/migrations
     networks:
       - senkou_lentera_cendekia_network
+    depends_on:
+      app:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   seeder:
     image: golang:1.24-alpine
     working_dir: /app
     depends_on:
-      - postgres
+      app:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     volumes:
       - .:/app
     environment:

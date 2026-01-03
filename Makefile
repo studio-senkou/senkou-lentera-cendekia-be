@@ -45,18 +45,23 @@ migrate-up:
 	@dbmate -u $$(grep '^DB_URL=' .env | cut -d '=' -f2-) --migrations-dir=./database/migrations --schema-file=./database/migrations/schema.sql up
 
 migrate-prod-up:
-	@docker compose run --rm dbmate up
+	@docker compose -f docker-compose.yml --env-file .env.production -p senkou-lentera-cendekia-api run --rm dbmate up
 
 migrate-down:
 	@dbmate -u $$(grep '^DB_URL=' .env | cut -d '=' -f2-) --migrations-dir=./database/migrations --schema-file=./database/migrations/schema.sql down
 
 migrate-prod-down:
-	@docker compose run --rm dbmate down
+	@docker compose -f docker-compose.yml --env-file .env.production -p senkou-lentera-cendekia-api run --rm dbmate down
 
 seed:
 	@echo "Seeding database.."
 	@go run database/seeders/database_seeder.go
 	@echo "Database seeding completed."
+
+seed-prod:
+	@echo "Seeding production database.."
+	@docker compose -f docker-compose.yml --env-file .env.production -p senkou-lentera-cendekia-api run --rm seeder
+	@echo "Production database seeding completed."
 
 rebuild-prod:
 	@mv .env .env.temp
