@@ -64,7 +64,7 @@ func (r *UserRepository) GetAll() ([]*User, error) {
 	query := `
 		SELECT  id, name, email, role, email_verified_at,  is_active, created_at, updated_at 
 		FROM users 
-		WHERE role NOT IN ('admin')
+		WHERE role NOT IN ('admin') AND deleted_at IS NULL
 		ORDER BY created_at DESC
 	`
 
@@ -185,7 +185,7 @@ func (r *UserRepository) GetMentorDropdown() ([]*Mentor, error) {
 }
 
 func (r *UserRepository) GetByID(id uint) (*User, error) {
-	query := `SELECT id, name, email, role, email_verified_at, is_active, created_at, updated_at FROM users WHERE id = $1`
+	query := `SELECT id, name, email, role, email_verified_at, is_active, created_at, updated_at FROM users WHERE id = $1 AND deleted_at IS NULL`
 
 	user := new(User)
 	err := r.db.QueryRow(query, id).Scan(&user.ID, &user.Name, &user.Email, &user.Role, &user.EmailVerifiedAt, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
@@ -200,7 +200,7 @@ func (r *UserRepository) GetByID(id uint) (*User, error) {
 }
 
 func (r *UserRepository) GetByEmail(email string) (*User, error) {
-	query := `SELECT id, name, email, password, role, email_verified_at, is_active, created_at, updated_at FROM users WHERE email = $1`
+	query := `SELECT id, name, email, password, role, email_verified_at, is_active, created_at, updated_at FROM users WHERE email = $1 AND deleted_at IS NULL`
 
 	user := new(User)
 	err := r.db.QueryRow(query, email).Scan(&user.ID, &user.Name, &user.Email, &user.Password, &user.Role, &user.EmailVerifiedAt, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
@@ -374,21 +374,11 @@ func (r *UserRepository) VerifyOldPassword(id int, oldPassword string) (bool, er
 }
 
 func (r *UserRepository) Delete(id int) error {
-	query := `DELETE FROM users WHERE id = $1`
+	_, err := SoftDelete(r.db, "users", "id", id)
+	return err
+}
 
-	result, err := r.db.Exec(query, id)
-	if err != nil {
-		return err
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if rowsAffected == 0 {
-		return sql.ErrNoRows
-	}
-
-	return nil
+func (r *UserRepository) Restore(id int) error {
+	_, err := Restore(r.db, "users", "id", id)
+	return err
 }

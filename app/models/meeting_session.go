@@ -122,9 +122,10 @@ func (r *MeetingSessionRepository) GetAll(userID uint) ([]*MeetingSession, error
 	var err error
 
 	if userID != 0 {
-		query += " WHERE s.user_id = $1"
+		query += " WHERE ms.deleted_at IS NULL AND s.user_id = $1"
 		rows, err = r.db.Query(query, userID)
 	} else {
+		query += " WHERE ms.deleted_at IS NULL"
 		rows, err = r.db.Query(query)
 	}
 
@@ -168,7 +169,7 @@ func (r *MeetingSessionRepository) GetByID(id uint) (*MeetingSession, error) {
 			LEFT JOIN students s ON s.id = ms.student_id
 			LEFT JOIN users u ON u.id = s.user_id
 			LEFT JOIN users mu ON mu.id = ms.mentor_id
-		WHERE ms.id = $1
+		WHERE ms.id = $1 AND ms.deleted_at IS NULL
 	`
 
 	row := r.db.QueryRow(query, id)
@@ -235,8 +236,21 @@ func (r *MeetingSessionRepository) BulkUpdate(sessions []*MeetingSession) error 
 
 func (r *MeetingSessionRepository) Delete(id uint) error {
 	query := `
-		DELETE FROM meeting_sessions WHERE id = $1
+		UPDATE meeting_sessions SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL
 	`
-	_, err := r.db.Exec(query, id)
-	return err
+	result, err := r.db.Exec(query, id)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
 }

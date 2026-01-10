@@ -351,6 +351,12 @@ func (mc *MeetingSessionController) DeleteMeetingSession(c *fiber.Ctx) error {
 	}
 
 	if err := mc.meetingSessionRepo.Delete(uint(sessionID)); err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"status":  "fail",
+				"message": "Meeting session not found",
+			})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Failed to delete meeting session",

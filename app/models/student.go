@@ -57,7 +57,7 @@ func (r *StudentRepository) FindStudentClass(userID int) ([]*Class, error) {
 			c.classname
 		FROM classes c
 			INNER JOIN students s ON s.class_id = c.id
-			WHERE s.user_id = $1
+			WHERE s.user_id = $1 AND s.deleted_at IS NULL AND c.deleted_at IS NULL
 	`
 
 	rows, err := r.db.Query(query, userID)
@@ -80,12 +80,26 @@ func (r *StudentRepository) FindStudentClass(userID int) ([]*Class, error) {
 
 func (r *StudentRepository) IsInClass(userID int, classID uuid.UUID) (bool, error) {
 	var exists bool
-	query := "SELECT EXISTS(SELECT 1 FROM students WHERE user_id = $1 AND class_id = $2)"
+	query := "SELECT EXISTS(SELECT 1 FROM students WHERE user_id = $1 AND class_id = $2 AND deleted_at IS NULL)"
 	err := r.db.QueryRow(query, userID, classID).Scan(&exists)
 	return exists, err
 }
 
 func (r *StudentRepository) RemoveFromClass(userID int, classID uuid.UUID) error {
-	_, err := r.db.Exec("DELETE FROM students WHERE user_id = $1 AND class_id = $2", userID, classID)
-	return err
+	query := `UPDATE students SET deleted_at = NOW() WHERE user_id = $1 AND class_id = $2 AND deleted_at IS NULL`
+	result, err := r.db.Exec(query, userID, classID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
 }

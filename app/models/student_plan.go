@@ -78,6 +78,42 @@ func (r *StudentPlanRepository) DeleteStudentPlan(planID int) error {
 		SET deleted_at = NOW()
 		WHERE id = $1 AND deleted_at IS NULL
 	`
-	_, err := r.db.Exec(query, planID)
-	return err
+	result, err := r.db.Exec(query, planID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (r *StudentPlanRepository) RestoreStudentPlan(planID int) error {
+	query := `
+		UPDATE student_plans
+		SET deleted_at = NULL
+		WHERE id = $1 AND deleted_at IS NOT NULL
+	`
+	result, err := r.db.Exec(query, planID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
 }

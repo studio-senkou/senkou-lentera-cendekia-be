@@ -105,11 +105,43 @@ func (r *TestimonyRepository) Delete(id int) error {
 	query := `
 		UPDATE testimonials
 		SET deleted_at = CURRENT_TIMESTAMP
-		WHERE id = $1`
+		WHERE id = $1 AND deleted_at IS NULL`
 
-	_, err := r.db.Exec(query, id)
+	result, err := r.db.Exec(query, id)
 	if err != nil {
 		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (r *TestimonyRepository) Restore(id int) error {
+	query := `
+		UPDATE testimonials
+		SET deleted_at = NULL
+		WHERE id = $1 AND deleted_at IS NOT NULL`
+
+	result, err := r.db.Exec(query, id)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
 	}
 
 	return nil
