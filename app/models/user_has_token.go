@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"github.com/studio-senkou/lentera-cendekia-be/database/facades"
 )
 
 type UserHasToken struct {
@@ -10,11 +11,15 @@ type UserHasToken struct {
 }
 
 type AuthenticationRepository struct {
-	db *sql.DB
+	db facades.DBExecutor
 }
 
-func NewAuthenticationRepository(db *sql.DB) *AuthenticationRepository {
+func NewAuthenticationRepository(db facades.DBExecutor) *AuthenticationRepository {
 	return &AuthenticationRepository{db: db}
+}
+
+func (r *AuthenticationRepository) WithExecutor(executor facades.DBExecutor) *AuthenticationRepository {
+	return &AuthenticationRepository{db: executor}
 }
 
 func (r *AuthenticationRepository) UpdateOrCreate(userHasToken *UserHasToken) error {

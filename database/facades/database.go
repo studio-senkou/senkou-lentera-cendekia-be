@@ -9,9 +9,16 @@ import (
 	_ "github.com/lib/pq" // PostgreSQL driver
 )
 
+type DBExecutor interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
 type Database interface {
 	GetDB() *sql.DB
 	Close() error
+	Transaction(fn func(tx *sql.Tx) error) error
 }
 
 type DatabaseFacade struct {
@@ -27,6 +34,30 @@ func (f *DatabaseFacade) Close() error {
 		return f.Database.Close()
 	}
 	return nil
+}
+
+func (f *DatabaseFacade) Transaction(fn func(tx *sql.Tx) error) error {
+	tx, err := f.Database.Begin()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // re-throw panic after Rollback
+		} else if err != nil {
+			tx.Rollback() // err is shadowed in return, but we handle it via named return or manual check
+		}
+	}()
+
+	err = fn(tx)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (f *DatabaseFacade) Connect() error {

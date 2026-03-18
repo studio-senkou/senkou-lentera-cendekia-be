@@ -55,7 +55,7 @@ migrate-prod-down:
 
 seed:
 	@echo "Seeding database.."
-	@go run database/seeders/database_seeder.go
+	@go run cmd/seeder/main.go
 	@echo "Database seeding completed."
 
 seed-prod:
@@ -64,11 +64,9 @@ seed-prod:
 	@echo "Production database seeding completed."
 
 rebuild-prod:
-	@mv .env .env.temp
 	@docker compose -f docker-compose.yml --env-file .env.production -p senkou-lentera-cendekia-api down --remove-orphans
 	@docker compose -f docker-compose.yml --env-file .env.production -p senkou-lentera-cendekia-api build --no-cache
 	@docker compose -f docker-compose.yml --env-file .env.production -p senkou-lentera-cendekia-api up -d --force-recreate
-	@mv .env.temp .env
 	@echo "Rebuild completed."
 	
 rebuild-dev:

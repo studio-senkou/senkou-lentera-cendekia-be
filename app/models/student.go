@@ -1,10 +1,10 @@
 package models
 
 import (
-	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/studio-senkou/lentera-cendekia-be/database/facades"
 )
 
 type Student struct {
@@ -18,13 +18,17 @@ type Student struct {
 }
 
 type StudentRepository struct {
-	db *sql.DB
+	db facades.DBExecutor
 }
 
-func NewStudentRepository(db *sql.DB) *StudentRepository {
+func NewStudentRepository(db facades.DBExecutor) *StudentRepository {
 	return &StudentRepository{
 		db: db,
 	}
+}
+
+func (r *StudentRepository) WithExecutor(executor facades.DBExecutor) *StudentRepository {
+	return &StudentRepository{db: executor}
 }
 
 func (r *StudentRepository) AddIntoClass(userID uint, classID uuid.UUID) (*Student, error) {

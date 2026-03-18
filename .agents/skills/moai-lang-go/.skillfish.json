@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "moai-lang-go",
+  "owner": "modu-ai",
+  "repo": "moai-adk",
+  "path": ".claude/skills/moai-lang-go",
+  "branch": "main",
+  "sha": "965da071d1798ee7fc50e29fbecf1897669816f2",
+  "source": "manual"
+}

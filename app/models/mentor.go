@@ -1,10 +1,10 @@
 package models
 
 import (
-	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/studio-senkou/lentera-cendekia-be/database/facades"
 )
 
 type Mentor struct {
@@ -18,13 +18,17 @@ type Mentor struct {
 }
 
 type MentorRepository struct {
-	db *sql.DB
+	db facades.DBExecutor
 }
 
-func NewMentorRepository(db *sql.DB) *MentorRepository {
+func NewMentorRepository(db facades.DBExecutor) *MentorRepository {
 	return &MentorRepository{
 		db: db,
 	}
+}
+
+func (r *MentorRepository) WithExecutor(executor facades.DBExecutor) *MentorRepository {
+	return &MentorRepository{db: executor}
 }
 
 func (r *MentorRepository) AddIntoClass(userID uint, classID uuid.UUID) (*Mentor, error) {

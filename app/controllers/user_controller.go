@@ -41,6 +41,7 @@ func NewUserController() *UserController {
 }
 
 func (uc *UserController) CreateNewStudent(c *fiber.Ctx) error {
+	var err error
 	createNewStudentRequest := new(requests.CreateNewStudentRequest)
 
 	if validationError, err := validator.ValidateRequest(c, createNewStudentRequest); err != nil {
@@ -62,7 +63,41 @@ func (uc *UserController) CreateNewStudent(c *fiber.Ctx) error {
 		Role:     "user",
 	}
 
-	if err := uc.userRepo.Create(user); err != nil {
+	classID, err := uuid.Parse(createNewStudentRequest.Class)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Invalid class ID format",
+			"error":   err.Error(),
+		})
+	}
+	err = database.DB.Transaction(func(tx *sql.Tx) error {
+		userRepo := uc.userRepo.WithExecutor(tx)
+		studentRepo := uc.studentRepo.WithExecutor(tx)
+		studentPlanRepo := uc.studentPlanRepo.WithExecutor(tx)
+
+		if err := userRepo.Create(user); err != nil {
+			return err
+		}
+
+		student, err := studentRepo.AddIntoClass(user.ID, classID)
+		if err != nil {
+			return err
+		}
+
+		studentPlan := &models.StudentPlan{
+			StudentID:     student.ID,
+			TotalSessions: createNewStudentRequest.MinimalSessions,
+		}
+
+		if err := studentPlanRepo.CreateNewStudentPlan(studentPlan); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		if err == models.ErrEmailAlreadyExists {
 			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 				"error": "Email already exists",
@@ -70,26 +105,7 @@ func (uc *UserController) CreateNewStudent(c *fiber.Ctx) error {
 		}
 
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to create user",
-		})
-	}
-
-	classID := uuid.MustParse(createNewStudentRequest.Class)
-	student, err := uc.studentRepo.AddIntoClass(user.ID, classID)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to add user into class",
-		})
-	}
-
-	studentPlan := &models.StudentPlan{
-		StudentID:     student.ID,
-		TotalSessions: createNewStudentRequest.MinimalSessions,
-	}
-
-	if err := uc.studentPlanRepo.CreateNewStudentPlan(studentPlan); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to create student plan",
+			"error": "Failed to create student: " + err.Error(),
 		})
 	}
 
@@ -104,6 +120,7 @@ func (uc *UserController) CreateNewStudent(c *fiber.Ctx) error {
 }
 
 func (uc *UserController) CreateNewMentor(c *fiber.Ctx) error {
+	var err error
 	createNewMentorRequest := new(requests.CreateNewMentorRequest)
 
 	if validationError, err := validator.ValidateRequest(c, createNewMentorRequest); err != nil {
@@ -125,7 +142,28 @@ func (uc *UserController) CreateNewMentor(c *fiber.Ctx) error {
 		Role:     "mentor",
 	}
 
-	if err := uc.userRepo.Create(user); err != nil {
+	err = database.DB.Transaction(func(tx *sql.Tx) error {
+		userRepo := uc.userRepo.WithExecutor(tx)
+		mentorRepo := uc.mentorRepo.WithExecutor(tx)
+
+		if err := userRepo.Create(user); err != nil {
+			return err
+		}
+
+		for _, class := range createNewMentorRequest.Classes {
+			classID, err := uuid.Parse(class)
+			if err != nil {
+				return fmt.Errorf("invalid class ID format: %w", err)
+			}
+			if _, err := mentorRepo.AddIntoClass(user.ID, classID); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		if err == models.ErrEmailAlreadyExists {
 			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 				"error": "Email already exists",
@@ -133,17 +171,8 @@ func (uc *UserController) CreateNewMentor(c *fiber.Ctx) error {
 		}
 
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to create user",
+			"error": "Failed to create mentor: " + err.Error(),
 		})
-	}
-
-	for _, class := range createNewMentorRequest.Classes {
-		classID := uuid.MustParse(class)
-		if _, err := uc.mentorRepo.AddIntoClass(user.ID, classID); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": "Failed to add user into class",
-			})
-		}
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
@@ -156,6 +185,7 @@ func (uc *UserController) CreateNewMentor(c *fiber.Ctx) error {
 }
 
 func (uc *UserController) ActivateUser(c *fiber.Ctx) error {
+	var err error
 	activationRequest := new(requests.UserActivationRequest)
 	if validationError, err := validator.ValidateRequest(c, activationRequest); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -205,19 +235,25 @@ func (uc *UserController) ActivateUser(c *fiber.Ctx) error {
 	user.MarkEmailAsVerified()
 	user.IsActive = true
 
-	if _, err := uc.userRepo.Update(user); err != nil {
+	err = database.DB.Transaction(func(tx *sql.Tx) error {
+		userRepo := uc.userRepo.WithExecutor(tx)
+
+		if _, err := userRepo.Update(user); err != nil {
+			return err
+		}
+
+		if err := userRepo.UpdatePassword(user.ID, activationRequest.Password); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Failed to activate user",
-			"error":   "Failed to update user activation status: " + err.Error(),
-		})
-	}
-
-	if err := uc.userRepo.UpdatePassword(user.ID, activationRequest.Password); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to set user password",
-			"error":   "Failed to set user password: " + err.Error(),
+			"error":   "Failed to update user status or password: " + err.Error(),
 		})
 	}
 

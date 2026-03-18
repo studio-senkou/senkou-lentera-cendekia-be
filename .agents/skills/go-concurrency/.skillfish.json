@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "go-concurrency",
+  "owner": "jovermier",
+  "repo": "cc-stack-marketplace",
+  "path": "plugins/cc-go/skills/go-concurrency",
+  "branch": "main",
+  "sha": "28b1081857ad9f157d2adb500452c2c5608c4691",
+  "source": "manual"
+}
