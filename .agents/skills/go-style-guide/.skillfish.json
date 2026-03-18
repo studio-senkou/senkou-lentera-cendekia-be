@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "go-style-guide",
+  "owner": "robbyt",
+  "repo": "claude-skills",
+  "path": "plugins/go-style-guide/skills/go-style-guide",
+  "branch": "main",
+  "sha": "47f3b47237662a36d268f5a35194b9a986a8b298",
+  "source": "manual"
+}

@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "go-best-practices",
+  "owner": "0xbigboss",
+  "repo": "claude-code",
+  "path": ".claude/skills/go-best-practices",
+  "branch": "main",
+  "sha": "4d950fc0541c1b3cead8558651e45016e1a4489f",
+  "source": "manual"
+}
