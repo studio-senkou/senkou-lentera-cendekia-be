@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/hibiken/asynq"
+	"github.com/studio-senkou/lentera-cendekia-be/database/facades"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/app"
 	"github.com/studio-senkou/lentera-cendekia-be/utils/auth"
 	gomail "github.com/studio-senkou/lentera-cendekia-be/utils/mail"
@@ -53,11 +54,15 @@ func (u *User) MarkAsActive() {
 }
 
 type UserRepository struct {
-	db *sql.DB
+	db facades.DBExecutor
 }
 
-func NewUserRepository(db *sql.DB) *UserRepository {
+func NewUserRepository(db facades.DBExecutor) *UserRepository {
 	return &UserRepository{db: db}
+}
+
+func (r *UserRepository) WithExecutor(executor facades.DBExecutor) *UserRepository {
+	return &UserRepository{db: executor}
 }
 
 func (r *UserRepository) GetAll() ([]*User, error) {

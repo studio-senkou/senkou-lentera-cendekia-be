@@ -3,6 +3,7 @@ package models
 import (
 	"database/sql"
 	"time"
+	"github.com/studio-senkou/lentera-cendekia-be/database/facades"
 )
 
 type StudentPlan struct {
@@ -15,13 +16,17 @@ type StudentPlan struct {
 }
 
 type StudentPlanRepository struct {
-	db *sql.DB
+	db facades.DBExecutor
 }
 
-func NewStudentPlanRepository(db *sql.DB) *StudentPlanRepository {
+func NewStudentPlanRepository(db facades.DBExecutor) *StudentPlanRepository {
 	return &StudentPlanRepository{
 		db: db,
 	}
+}
+
+func (r *StudentPlanRepository) WithExecutor(executor facades.DBExecutor) *StudentPlanRepository {
+	return &StudentPlanRepository{db: executor}
 }
 
 func (r *StudentPlanRepository) CreateNewStudentPlan(plan *StudentPlan) error {
