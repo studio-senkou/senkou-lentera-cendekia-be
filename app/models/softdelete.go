@@ -3,13 +3,15 @@ package models
 import (
 	"database/sql"
 	"fmt"
+
+	"github.com/studio-senkou/lentera-cendekia-be/database/facades"
 )
 
 type SoftDeleteResult struct {
 	RowsAffected int64
 }
 
-func SoftDelete(db *sql.DB, table string, idColumn string, id any) (*SoftDeleteResult, error) {
+func SoftDelete(db facades.DBExecutor, table string, idColumn string, id any) (*SoftDeleteResult, error) {
 	query := fmt.Sprintf(
 		"UPDATE %s SET deleted_at = NOW() WHERE %s = $1 AND deleted_at IS NULL",
 		table, idColumn,
@@ -32,7 +34,7 @@ func SoftDelete(db *sql.DB, table string, idColumn string, id any) (*SoftDeleteR
 	return &SoftDeleteResult{RowsAffected: rowsAffected}, nil
 }
 
-func Restore(db *sql.DB, table string, idColumn string, id any) (*SoftDeleteResult, error) {
+func Restore(db facades.DBExecutor, table string, idColumn string, id any) (*SoftDeleteResult, error) {
 	query := fmt.Sprintf(
 		"UPDATE %s SET deleted_at = NULL WHERE %s = $1 AND deleted_at IS NOT NULL",
 		table, idColumn,
@@ -55,7 +57,7 @@ func Restore(db *sql.DB, table string, idColumn string, id any) (*SoftDeleteResu
 	return &SoftDeleteResult{RowsAffected: rowsAffected}, nil
 }
 
-func HardDelete(db *sql.DB, table string, idColumn string, id any) (*SoftDeleteResult, error) {
+func HardDelete(db facades.DBExecutor, table string, idColumn string, id any) (*SoftDeleteResult, error) {
 	query := fmt.Sprintf("DELETE FROM %s WHERE %s = $1", table, idColumn)
 
 	result, err := db.Exec(query, id)

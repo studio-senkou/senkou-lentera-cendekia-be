@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/studio-senkou/lentera-cendekia-be/database/facades"
 )
 
 // ─── Entity structs ───────────────────────────────────────────────────────────
@@ -82,11 +83,16 @@ type QuizAnswer struct {
 // ─── QuizRepository ──────────────────────────────────────────────────────────
 
 type QuizRepository struct {
-	db *sql.DB
+	db  facades.DBExecutor
+	raw *sql.DB // retained for internal Begin() in multi-step methods
 }
 
 func NewQuizRepository(db *sql.DB) *QuizRepository {
-	return &QuizRepository{db: db}
+	return &QuizRepository{db: db, raw: db}
+}
+
+func (r *QuizRepository) WithExecutor(executor facades.DBExecutor) *QuizRepository {
+	return &QuizRepository{db: executor, raw: r.raw}
 }
 
 // GetActiveQuizWithQuestions mengambil kuis aktif beserta soal dan pilihan jawaban.
@@ -340,7 +346,7 @@ func (r *QuizRepository) GetQuestionByAttemptIndex(attempt *QuizAttempt, index i
 
 // CreateAttempt membuat attempt baru dengan urutan soal yang diacak.
 func (r *QuizRepository) CreateAttempt(attempt *QuizAttempt) error {
-	tx, err := r.db.Begin()
+	tx, err := r.raw.Begin()
 	if err != nil {
 		return err
 	}
@@ -418,7 +424,7 @@ func (r *QuizRepository) CreateAttempt(attempt *QuizAttempt) error {
 // SubmitAnswers menyimpan jawaban, menghitung skor, dan menandai attempt sebagai selesai.
 // Seluruh proses dijalankan dalam satu transaksi.
 func (r *QuizRepository) SubmitAnswers(attemptID uint, answers []QuizAnswer) (*QuizAttempt, error) {
-	tx, err := r.db.Begin()
+	tx, err := r.raw.Begin()
 	if err != nil {
 		return nil, err
 	}
@@ -545,11 +551,15 @@ func (r *QuizRepository) GetAttemptByID(attemptID uint) (*QuizAttempt, []QuizAns
 // Dipisah dari QuizRepository (student) agar responsibility tetap jelas.
 
 type QuizAdminRepository struct {
-	db *sql.DB
+	db facades.DBExecutor
 }
 
-func NewQuizAdminRepository(db *sql.DB) *QuizAdminRepository {
+func NewQuizAdminRepository(db facades.DBExecutor) *QuizAdminRepository {
 	return &QuizAdminRepository{db: db}
+}
+
+func (r *QuizAdminRepository) WithExecutor(executor facades.DBExecutor) *QuizAdminRepository {
+	return &QuizAdminRepository{db: executor}
 }
 
 // ── Quiz CRUD ─────────────────────────────────────────────────────────────────
