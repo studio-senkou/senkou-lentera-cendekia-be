@@ -3,6 +3,8 @@ package models
 import (
 	"database/sql"
 	"time"
+
+	"github.com/studio-senkou/lentera-cendekia-be/database/facades"
 )
 
 type MeetingSession struct {
@@ -23,13 +25,16 @@ type MeetingSession struct {
 }
 
 type MeetingSessionRepository struct {
-	db *sql.DB
+	db  facades.DBExecutor
+	raw *sql.DB // retained for BulkCreate/BulkUpdate which need Begin()
 }
 
 func NewMeetingSessionRepository(db *sql.DB) *MeetingSessionRepository {
-	return &MeetingSessionRepository{
-		db: db,
-	}
+	return &MeetingSessionRepository{db: db, raw: db}
+}
+
+func (r *MeetingSessionRepository) WithExecutor(executor facades.DBExecutor) *MeetingSessionRepository {
+	return &MeetingSessionRepository{db: executor, raw: r.raw}
 }
 
 func (r *MeetingSessionRepository) Create(session *MeetingSession) (*MeetingSession, error) {
@@ -66,7 +71,7 @@ func (r *MeetingSessionRepository) Create(session *MeetingSession) (*MeetingSess
 }
 
 func (r *MeetingSessionRepository) BulkCreateSessions(sessions []*MeetingSession) error {
-	tx, err := r.db.Begin()
+	tx, err := r.raw.Begin()
 	if err != nil {
 		return err
 	}
@@ -194,7 +199,7 @@ func (r *MeetingSessionRepository) GetByID(id uint) (*MeetingSession, error) {
 }
 
 func (r *MeetingSessionRepository) BulkUpdate(sessions []*MeetingSession) error {
-	tx, err := r.db.Begin()
+	tx, err := r.raw.Begin()
 	if err != nil {
 		return err
 	}

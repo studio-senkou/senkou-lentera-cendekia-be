@@ -1,6 +1,10 @@
 package models
 
-import "database/sql"
+import (
+	"database/sql"
+
+	"github.com/studio-senkou/lentera-cendekia-be/database/facades"
+)
 
 type Testimony struct {
 	ID                         int     `json:"id"`
@@ -15,11 +19,15 @@ type Testimony struct {
 }
 
 type TestimonyRepository struct {
-	db *sql.DB
+	db facades.DBExecutor
 }
 
-func NewTestimonyRepository(db *sql.DB) *TestimonyRepository {
+func NewTestimonyRepository(db facades.DBExecutor) *TestimonyRepository {
 	return &TestimonyRepository{db: db}
+}
+
+func (r *TestimonyRepository) WithExecutor(executor facades.DBExecutor) *TestimonyRepository {
+	return &TestimonyRepository{db: executor}
 }
 
 func (r *TestimonyRepository) Create(testimony *Testimony) error {
