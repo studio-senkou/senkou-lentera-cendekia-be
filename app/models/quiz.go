@@ -1,9 +1,11 @@
 package models
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
-	"math/rand"
+	"fmt"
+	mathrand "math/rand"
 	"strconv"
 	"time"
 
@@ -11,58 +13,67 @@ import (
 	"github.com/studio-senkou/lentera-cendekia-be/database/facades"
 )
 
-// ─── Entity structs ───────────────────────────────────────────────────────────
-
 type QuizQuiz struct {
-	ID                uint       `json:"id"`
-	Title             string     `json:"title"`
-	Description       *string    `json:"description,omitempty"`
-	PassingScore      int        `json:"passing_score"`
-	TimeLimitMinutes  *int       `json:"time_limit_minutes,omitempty"`
-	IsActive          bool       `json:"is_active"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         *time.Time `json:"updated_at"`
-	DeletedAt         *time.Time `json:"deleted_at,omitempty"`
+	ID               uint       `json:"id"`
+	Code             string     `json:"code"`
+	Title            string     `json:"title"`
+	Description      *string    `json:"description,omitempty"`
+	PassingScore     int        `json:"passing_score"`
+	TimeLimitMinutes *int       `json:"time_limit_minutes,omitempty"`
+	IsActive         bool       `json:"is_active"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        *time.Time `json:"updated_at"`
+	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
+}
+
+func generateQuizCode() (string, error) {
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	for i := range b {
+		b[i] = charset[b[i]%byte(len(charset))]
+	}
+	return string(b), nil
 }
 
 type QuizQuestion struct {
-	ID           uint          `json:"id"`
-	QuizID       uint          `json:"quiz_id"`
-	QuestionText string        `json:"question_text"`
-	Options      []QuizOption  `json:"options,omitempty"`
-	CreatedAt    time.Time     `json:"created_at"`
-	UpdatedAt    *time.Time    `json:"updated_at"`
+	ID           uint         `json:"id"`
+	QuizID       uint         `json:"quiz_id"`
+	QuestionText string       `json:"question_text"`
+	Options      []QuizOption `json:"options,omitempty"`
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    *time.Time   `json:"updated_at"`
 }
 
-// QuizOption — is_correct disembunyikan dari response user (hanya untuk internal scoring)
 type QuizOption struct {
-	ID          uint       `json:"id"`
-	QuestionID  uint       `json:"question_id"`
-	OptionText  string     `json:"option_text"`
-	IsCorrect   bool       `json:"-"` // TIDAK dikirim ke student
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   *time.Time `json:"updated_at"`
+	ID         uint       `json:"id"`
+	QuestionID uint       `json:"question_id"`
+	OptionText string     `json:"option_text"`
+	IsCorrect  bool       `json:"-"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  *time.Time `json:"updated_at"`
 }
 
-// QuizOptionAdmin — sama dengan QuizOption tapi is_correct di-expose (untuk response admin).
 type QuizOptionAdmin struct {
-	ID          uint       `json:"id"`
-	QuestionID  uint       `json:"question_id"`
-	OptionText  string     `json:"option_text"`
-	IsCorrect   bool       `json:"is_correct"` // admin boleh lihat
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   *time.Time `json:"updated_at"`
+	ID         uint       `json:"id"`
+	QuestionID uint       `json:"question_id"`
+	OptionText string     `json:"option_text"`
+	IsCorrect  bool       `json:"is_correct"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  *time.Time `json:"updated_at"`
 }
 
 type QuizAttempt struct {
 	ID                   uint            `json:"id"`
 	QuizID               uint            `json:"quiz_id"`
 	UserID               uint            `json:"user_id"`
-	Status               string          `json:"status"` // 'in_progress', 'completed', 'reset'
-	Score                *float64        `json:"score"`  // NULL saat in_progress
-	QuestionIDs          pq.Int64Array   `json:"-"`      // Internal order soal (acak)
-	OptionOrder          json.RawMessage `json:"-"`      // Internal order pilihan per soal (acak)
-	CurrentQuestionIndex int             `json:"-"`      // Posisi soal yang sedang aktif
+	Status               string          `json:"status"`
+	Score                *float64        `json:"score"`
+	QuestionIDs          pq.Int64Array   `json:"-"`
+	OptionOrder          json.RawMessage `json:"-"`
+	CurrentQuestionIndex int             `json:"-"`
 	StartedAt            time.Time       `json:"started_at"`
 	SubmittedAt          *time.Time      `json:"submitted_at"`
 	ResetAt              *time.Time      `json:"reset_at,omitempty"`
@@ -80,11 +91,9 @@ type QuizAnswer struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-// ─── QuizRepository ──────────────────────────────────────────────────────────
-
 type QuizRepository struct {
 	db  facades.DBExecutor
-	raw *sql.DB // retained for internal Begin() in multi-step methods
+	raw *sql.DB
 }
 
 func NewQuizRepository(db *sql.DB) *QuizRepository {
@@ -95,18 +104,15 @@ func (r *QuizRepository) WithExecutor(executor facades.DBExecutor) *QuizReposito
 	return &QuizRepository{db: executor, raw: r.raw}
 }
 
-// GetActiveQuizWithQuestions mengambil kuis aktif beserta soal dan pilihan jawaban.
-// Soal dimuat berdasarkan urutan ID yang ada di question_ids milik attempt (acak per student).
 func (r *QuizRepository) GetActiveQuizWithQuestions(quizID uint, questionIDs []int64) (*QuizQuiz, []QuizQuestion, error) {
-	// 1. Ambil header kuis
 	quizQuery := `
-		SELECT id, title, description, passing_score, time_limit_minutes, is_active, created_at, updated_at
+		SELECT id, code, title, description, passing_score, time_limit_minutes, is_active, created_at, updated_at
 		FROM quiz_quizzes
 		WHERE id = $1 AND is_active = TRUE AND deleted_at IS NULL
 	`
 	quiz := new(QuizQuiz)
 	err := r.db.QueryRow(quizQuery, quizID).Scan(
-		&quiz.ID, &quiz.Title, &quiz.Description, &quiz.PassingScore,
+		&quiz.ID, &quiz.Code, &quiz.Title, &quiz.Description, &quiz.PassingScore,
 		&quiz.TimeLimitMinutes, &quiz.IsActive, &quiz.CreatedAt, &quiz.UpdatedAt,
 	)
 	if err != nil {
@@ -116,8 +122,6 @@ func (r *QuizRepository) GetActiveQuizWithQuestions(quizID uint, questionIDs []i
 		return nil, nil, err
 	}
 
-	// 2. Ambil semua soal berdasarkan urutan questionIDs (acak per student)
-	// Jika questionIDs kosong, fallback ke urutan ID default
 	var qRows *sql.Rows
 	if len(questionIDs) > 0 {
 		questionsQuery := `
@@ -156,7 +160,6 @@ func (r *QuizRepository) GetActiveQuizWithQuestions(quizID uint, questionIDs []i
 		loadedIDs = append(loadedIDs, q.ID)
 	}
 
-	// 3. Ambil semua pilihan untuk soal-soal tersebut
 	if len(loadedIDs) > 0 {
 		optionsQuery := `
 			SELECT id, question_id, option_text, created_at, updated_at
@@ -198,7 +201,6 @@ func (r *QuizRepository) GetActiveQuizWithQuestions(quizID uint, questionIDs []i
 	return quiz, questions, nil
 }
 
-// GetActiveQuizWithQuestionsV2 adalah versi yang sudah mendukung pengurutan opsi dari attempt
 func (r *QuizRepository) GetActiveQuizWithQuestionsV2(quizID uint, attempt *QuizAttempt) (*QuizQuiz, []QuizQuestion, error) {
 	quiz, questions, err := r.GetActiveQuizWithQuestions(quizID, attempt.QuestionIDs)
 	if err != nil {
@@ -230,8 +232,21 @@ func (r *QuizRepository) GetActiveQuizWithQuestionsV2(quizID uint, attempt *Quiz
 	return quiz, questions, nil
 }
 
-// GetActiveAttempt mengambil attempt aktif (in_progress atau completed) user untuk kuis tertentu.
-// Mengembalikan nil jika tidak ada atau sudah di-reset.
+func (r *QuizRepository) GetQuizIDByCode(code string) (uint, error) {
+	var id uint
+	err := r.db.QueryRow(
+		`SELECT id FROM quiz_quizzes WHERE code = $1 AND is_active = TRUE AND deleted_at IS NULL`,
+		code,
+	).Scan(&id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return id, nil
+}
+
 func (r *QuizRepository) GetActiveAttempt(userID, quizID uint) (*QuizAttempt, error) {
 	query := `
 		SELECT id, quiz_id, user_id, status, score, question_ids, option_order,
@@ -258,7 +273,6 @@ func (r *QuizRepository) GetActiveAttempt(userID, quizID uint) (*QuizAttempt, er
 	return attempt, nil
 }
 
-// UpdateAttemptIndex memperbarui posisi soal aktif pada attempt
 func (r *QuizRepository) UpdateAttemptIndex(attemptID uint, index int) error {
 	_, err := r.db.Exec(
 		`UPDATE quiz_attempts SET current_question_index = $1 WHERE id = $2`,
@@ -267,7 +281,6 @@ func (r *QuizRepository) UpdateAttemptIndex(attemptID uint, index int) error {
 	return err
 }
 
-// GetQuestionByAttemptIndex mengambil satu soal berdasarkan indeks dalam urutan acak attempt
 func (r *QuizRepository) GetQuestionByAttemptIndex(attempt *QuizAttempt, index int) (*QuizQuestion, error) {
 	if index < 0 || index >= len(attempt.QuestionIDs) {
 		return nil, nil
@@ -286,7 +299,6 @@ func (r *QuizRepository) GetQuestionByAttemptIndex(attempt *QuizAttempt, index i
 		return nil, err
 	}
 
-	// Ambil pilihan jawaban dalam urutan acak dari OptionOrder
 	var optionIDs []int64
 	if attempt.OptionOrder != nil {
 		var optionOrder map[string][]int64
@@ -298,7 +310,6 @@ func (r *QuizRepository) GetQuestionByAttemptIndex(attempt *QuizAttempt, index i
 		}
 	}
 
-	// Jika ada urutan acak, ambil opsi berdasarkan urutan tersebut
 	if len(optionIDs) > 0 {
 		rows, err := r.db.Query(
 			`SELECT id, question_id, option_text, created_at, updated_at FROM quiz_options WHERE id = ANY($1)`,
@@ -308,7 +319,6 @@ func (r *QuizRepository) GetQuestionByAttemptIndex(attempt *QuizAttempt, index i
 			return nil, err
 		}
 		defer rows.Close()
-		// Bangun map lalu susun sesuai urutan
 		optMap := make(map[int64]QuizOption)
 		for rows.Next() {
 			var opt QuizOption
@@ -323,7 +333,6 @@ func (r *QuizRepository) GetQuestionByAttemptIndex(attempt *QuizAttempt, index i
 			}
 		}
 	} else {
-		// Fallback: ambil opsi berdasarkan ID ASC
 		rows, err := r.db.Query(
 			`SELECT id, question_id, option_text, created_at, updated_at FROM quiz_options WHERE question_id = $1 ORDER BY id ASC`,
 			qID,
@@ -344,7 +353,6 @@ func (r *QuizRepository) GetQuestionByAttemptIndex(attempt *QuizAttempt, index i
 	return q, nil
 }
 
-// CreateAttempt membuat attempt baru dengan urutan soal yang diacak.
 func (r *QuizRepository) CreateAttempt(attempt *QuizAttempt) error {
 	tx, err := r.raw.Begin()
 	if err != nil {
@@ -352,9 +360,8 @@ func (r *QuizRepository) CreateAttempt(attempt *QuizAttempt) error {
 	}
 	defer tx.Rollback()
 
-	// 1. Ambil semua ID soal untuk kuis ini
 	var questionIDs []int64
-	qRows, err := tx.Query(`SELECT id FROM quiz_questions WHERE quiz_id = $1 ORDER BY order_number ASC`, attempt.QuizID)
+	qRows, err := tx.Query(`SELECT id FROM quiz_questions WHERE quiz_id = $1 ORDER BY id ASC`, attempt.QuizID)
 	if err != nil {
 		return err
 	}
@@ -368,9 +375,8 @@ func (r *QuizRepository) CreateAttempt(attempt *QuizAttempt) error {
 		questionIDs = append(questionIDs, id)
 	}
 
-	// 2. Acak urutan soal dan pilihan jawaban
-	source := rand.NewSource(time.Now().UnixNano())
-	rng := rand.New(source)
+	source := mathrand.NewSource(time.Now().UnixNano())
+	rng := mathrand.New(source)
 
 	if len(questionIDs) > 1 {
 		rng.Shuffle(len(questionIDs), func(i, j int) {
@@ -379,7 +385,6 @@ func (r *QuizRepository) CreateAttempt(attempt *QuizAttempt) error {
 	}
 	attempt.QuestionIDs = questionIDs
 
-	// Ambil semua opsi untuk soal-soal ini dan acak per soal
 	optionOrder := make(map[string][]int64)
 	for _, qID := range questionIDs {
 		var optIDs []int64
@@ -404,7 +409,6 @@ func (r *QuizRepository) CreateAttempt(attempt *QuizAttempt) error {
 	optOrderJSON, _ := json.Marshal(optionOrder)
 	attempt.OptionOrder = optOrderJSON
 
-	// 3. Simpan attempt baru (current_question_index mulai dari 0)
 	query := `
 		INSERT INTO quiz_attempts (quiz_id, user_id, status, question_ids, option_order, current_question_index, started_at)
 		VALUES ($1, $2, 'in_progress', $3, $4, 0, NOW())
@@ -421,8 +425,6 @@ func (r *QuizRepository) CreateAttempt(attempt *QuizAttempt) error {
 	return tx.Commit()
 }
 
-// SubmitAnswers menyimpan jawaban, menghitung skor, dan menandai attempt sebagai selesai.
-// Seluruh proses dijalankan dalam satu transaksi.
 func (r *QuizRepository) SubmitAnswers(attemptID uint, answers []QuizAnswer) (*QuizAttempt, error) {
 	tx, err := r.raw.Begin()
 	if err != nil {
@@ -430,7 +432,6 @@ func (r *QuizRepository) SubmitAnswers(attemptID uint, answers []QuizAnswer) (*Q
 	}
 	defer tx.Rollback()
 
-	// Simpan setiap jawaban
 	insertAnswerQuery := `
 		INSERT INTO quiz_answers (attempt_id, question_id, option_id, is_correct)
 		VALUES ($1, $2, $3, (SELECT is_correct FROM quiz_options WHERE id = $3))
@@ -444,7 +445,6 @@ func (r *QuizRepository) SubmitAnswers(attemptID uint, answers []QuizAnswer) (*Q
 		}
 	}
 
-	// Hitung skor: (jumlah benar / jumlah soal) * 100
 	scoreQuery := `
 		SELECT
 			ROUND(
@@ -459,7 +459,6 @@ func (r *QuizRepository) SubmitAnswers(attemptID uint, answers []QuizAnswer) (*Q
 		return nil, err
 	}
 
-	// Update attempt menjadi completed
 	attempt := new(QuizAttempt)
 	updateQuery := `
 		UPDATE quiz_attempts
@@ -480,7 +479,6 @@ func (r *QuizRepository) SubmitAnswers(attemptID uint, answers []QuizAnswer) (*Q
 	return attempt, tx.Commit()
 }
 
-// ResetAttempt mengubah status attempt aktif menjadi 'reset' sehingga user bisa mulai ulang.
 func (r *QuizRepository) ResetAttempt(userID, quizID uint, adminID uint) error {
 	query := `
 		UPDATE quiz_attempts
@@ -505,7 +503,6 @@ func (r *QuizRepository) ResetAttempt(userID, quizID uint, adminID uint) error {
 	return nil
 }
 
-// GetAttemptByID mengambil attempt berdasarkan ID beserta seluruh jawaban.
 func (r *QuizRepository) GetAttemptByID(attemptID uint) (*QuizAttempt, []QuizAnswer, error) {
 	attemptQuery := `
 		SELECT id, quiz_id, user_id, status, score, question_ids, started_at, submitted_at, reset_at, reset_by, created_at, updated_at
@@ -546,9 +543,37 @@ func (r *QuizRepository) GetAttemptByID(attemptID uint) (*QuizAttempt, []QuizAns
 
 	return attempt, answers, nil
 }
-// ─── QuizAdminRepository ─────────────────────────────────────────────────────
-// Semua operasi CRUD quiz yang hanya boleh diakses admin.
-// Dipisah dari QuizRepository (student) agar responsibility tetap jelas.
+
+func (r *QuizRepository) GetStudentQuizHistories(userID uint) ([]*QuizAttempt, error) {
+	query := `
+		SELECT id, quiz_id, user_id, status, score, question_ids, option_order,
+		       current_question_index, started_at, submitted_at, reset_at, reset_by,
+		       created_at, updated_at
+		FROM quiz_attempts
+		WHERE user_id = $1 AND status IN ('completed', 'reset')
+		ORDER BY COALESCE(submitted_at, reset_at) DESC
+	`
+	rows, err := r.db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	attempts := make([]*QuizAttempt, 0)
+	for rows.Next() {
+		attempt := new(QuizAttempt)
+		if err := rows.Scan(
+			&attempt.ID, &attempt.QuizID, &attempt.UserID, &attempt.Status, &attempt.Score,
+			&attempt.QuestionIDs, &attempt.OptionOrder, &attempt.CurrentQuestionIndex,
+			&attempt.StartedAt, &attempt.SubmittedAt, &attempt.ResetAt, &attempt.ResetBy,
+			&attempt.CreatedAt, &attempt.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		attempts = append(attempts, attempt)
+	}
+	return attempts, nil
+}
 
 type QuizAdminRepository struct {
 	db facades.DBExecutor
@@ -562,12 +587,9 @@ func (r *QuizAdminRepository) WithExecutor(executor facades.DBExecutor) *QuizAdm
 	return &QuizAdminRepository{db: executor}
 }
 
-// ── Quiz CRUD ─────────────────────────────────────────────────────────────────
-
-// ListQuizzes mengembalikan semua kuis (termasuk yang tidak aktif), tanpa soal.
 func (r *QuizAdminRepository) ListQuizzes() ([]*QuizQuiz, error) {
 	query := `
-		SELECT id, title, description, passing_score, time_limit_minutes, is_active, created_at, updated_at
+		SELECT id, code, title, description, passing_score, time_limit_minutes, is_active, created_at, updated_at
 		FROM quiz_quizzes
 		WHERE deleted_at IS NULL
 		ORDER BY created_at DESC
@@ -582,7 +604,7 @@ func (r *QuizAdminRepository) ListQuizzes() ([]*QuizQuiz, error) {
 	for rows.Next() {
 		q := new(QuizQuiz)
 		if err := rows.Scan(
-			&q.ID, &q.Title, &q.Description, &q.PassingScore,
+			&q.ID, &q.Code, &q.Title, &q.Description, &q.PassingScore,
 			&q.TimeLimitMinutes, &q.IsActive, &q.CreatedAt, &q.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -592,16 +614,15 @@ func (r *QuizAdminRepository) ListQuizzes() ([]*QuizQuiz, error) {
 	return quizzes, nil
 }
 
-// GetQuizDetail mengambil kuis beserta soal dan seluruh pilihan (is_correct ikut serta untuk admin).
 func (r *QuizAdminRepository) GetQuizDetail(quizID uint) (*QuizQuiz, []QuizQuestion, error) {
 	quizQuery := `
-		SELECT id, title, description, passing_score, time_limit_minutes, is_active, created_at, updated_at
+		SELECT id, code, title, description, passing_score, time_limit_minutes, is_active, created_at, updated_at
 		FROM quiz_quizzes
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 	quiz := new(QuizQuiz)
 	err := r.db.QueryRow(quizQuery, quizID).Scan(
-		&quiz.ID, &quiz.Title, &quiz.Description, &quiz.PassingScore,
+		&quiz.ID, &quiz.Code, &quiz.Title, &quiz.Description, &quiz.PassingScore,
 		&quiz.TimeLimitMinutes, &quiz.IsActive, &quiz.CreatedAt, &quiz.UpdatedAt,
 	)
 	if err != nil {
@@ -638,7 +659,6 @@ func (r *QuizAdminRepository) GetQuizDetail(quizID uint) (*QuizQuiz, []QuizQuest
 	}
 
 	if len(questionIDs) > 0 {
-		// Admin melihat is_correct juga
 		optionsQuery := `
 			SELECT id, question_id, option_text, is_correct, created_at, updated_at
 			FROM quiz_options
@@ -676,19 +696,23 @@ func (r *QuizAdminRepository) GetQuizDetail(quizID uint) (*QuizQuiz, []QuizQuest
 	return quiz, questions, nil
 }
 
-// CreateQuiz membuat kuis baru.
 func (r *QuizAdminRepository) CreateQuiz(quiz *QuizQuiz) error {
+	code, err := generateQuizCode()
+	if err != nil {
+		return fmt.Errorf("failed to generate quiz code: %w", err)
+	}
+	quiz.Code = code
+
 	query := `
-		INSERT INTO quiz_quizzes (title, description, passing_score, time_limit_minutes, is_active)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO quiz_quizzes (code, title, description, passing_score, time_limit_minutes, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at, updated_at
 	`
 	return r.db.QueryRow(query,
-		quiz.Title, quiz.Description, quiz.PassingScore, quiz.TimeLimitMinutes, quiz.IsActive,
+		quiz.Code, quiz.Title, quiz.Description, quiz.PassingScore, quiz.TimeLimitMinutes, quiz.IsActive,
 	).Scan(&quiz.ID, &quiz.CreatedAt, &quiz.UpdatedAt)
 }
 
-// UpdateQuiz memperbarui data kuis.
 func (r *QuizAdminRepository) UpdateQuiz(quiz *QuizQuiz) error {
 	query := `
 		UPDATE quiz_quizzes
@@ -707,7 +731,6 @@ func (r *QuizAdminRepository) UpdateQuiz(quiz *QuizQuiz) error {
 	return result.Scan(&quiz.UpdatedAt)
 }
 
-// DeleteQuiz melakukan soft delete kuis.
 func (r *QuizAdminRepository) DeleteQuiz(quizID uint) error {
 	query := `UPDATE quiz_quizzes SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`
 	res, err := r.db.Exec(query, quizID)
@@ -721,9 +744,6 @@ func (r *QuizAdminRepository) DeleteQuiz(quizID uint) error {
 	return nil
 }
 
-// ── Question CRUD ─────────────────────────────────────────────────────────────
-
-// CreateQuestion menambah soal ke kuis.
 func (r *QuizAdminRepository) CreateQuestion(q *QuizQuestion) error {
 	query := `
 		INSERT INTO quiz_questions (quiz_id, question_text)
@@ -734,7 +754,6 @@ func (r *QuizAdminRepository) CreateQuestion(q *QuizQuestion) error {
 		Scan(&q.ID, &q.CreatedAt, &q.UpdatedAt)
 }
 
-// UpdateQuestion memperbarui teks atau urutan soal.
 func (r *QuizAdminRepository) UpdateQuestion(q *QuizQuestion) error {
 	query := `
 		UPDATE quiz_questions
@@ -746,7 +765,6 @@ func (r *QuizAdminRepository) UpdateQuestion(q *QuizQuestion) error {
 	return r.db.QueryRow(query, q.QuestionText, q.ID, q.QuizID).Scan(&q.UpdatedAt)
 }
 
-// DeleteQuestion menghapus soal (permanen, opsi ikut terhapus via CASCADE).
 func (r *QuizAdminRepository) DeleteQuestion(questionID, quizID uint) error {
 	query := `DELETE FROM quiz_questions WHERE id = $1 AND quiz_id = $2`
 	res, err := r.db.Exec(query, questionID, quizID)
@@ -760,9 +778,6 @@ func (r *QuizAdminRepository) DeleteQuestion(questionID, quizID uint) error {
 	return nil
 }
 
-// ── Option CRUD ───────────────────────────────────────────────────────────────
-
-// CreateOption menambah pilihan ke soal.
 func (r *QuizAdminRepository) CreateOption(opt *QuizOption) error {
 	query := `
 		INSERT INTO quiz_options (question_id, option_text, is_correct)
@@ -773,7 +788,6 @@ func (r *QuizAdminRepository) CreateOption(opt *QuizOption) error {
 		Scan(&opt.ID, &opt.CreatedAt, &opt.UpdatedAt)
 }
 
-// UpdateOption memperbarui teks, status benar, atau urutan pilihan.
 func (r *QuizAdminRepository) UpdateOption(opt *QuizOption) error {
 	query := `
 		UPDATE quiz_options
@@ -787,7 +801,6 @@ func (r *QuizAdminRepository) UpdateOption(opt *QuizOption) error {
 		Scan(&opt.UpdatedAt)
 }
 
-// DeleteOption menghapus pilihan jawaban.
 func (r *QuizAdminRepository) DeleteOption(optionID, questionID uint) error {
 	query := `DELETE FROM quiz_options WHERE id = $1 AND question_id = $2`
 	res, err := r.db.Exec(query, optionID, questionID)
@@ -801,9 +814,6 @@ func (r *QuizAdminRepository) DeleteOption(optionID, questionID uint) error {
 	return nil
 }
 
-// ── Attempt Management ────────────────────────────────────────────────────────
-
-// ListAttempts mengembalikan semua attempt untuk satu kuis beserta info user.
 func (r *QuizAdminRepository) ListAttempts(quizID uint) ([]QuizAttemptWithUser, error) {
 	query := `
 		SELECT
@@ -838,7 +848,6 @@ func (r *QuizAdminRepository) ListAttempts(quizID uint) ([]QuizAttemptWithUser, 
 	return attempts, nil
 }
 
-// QuizAttemptWithUser adalah attempt yang sudah di-join dengan data user (untuk view admin).
 type QuizAttemptWithUser struct {
 	QuizAttempt
 	UserName  string `json:"user_name"`

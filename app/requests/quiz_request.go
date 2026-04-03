@@ -1,6 +1,5 @@
 package requests
 
-// SubmitQuizRequest adalah payload untuk POST /quiz/:id/submit
 type SubmitQuizRequest struct {
 	Answers []SubmitAnswerItem `json:"answers" validate:"required,min=1,dive"`
 }
@@ -10,7 +9,6 @@ type SubmitAnswerItem struct {
 	OptionID   uint `json:"option_id"   validate:"required"`
 }
 
-// ResetQuizAttemptRequest adalah payload untuk POST /quiz/:id/reset (admin only)
 type ResetQuizAttemptRequest struct {
 	UserID uint `json:"user_id" validate:"required"`
 }

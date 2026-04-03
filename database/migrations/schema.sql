@@ -1,4 +1,4 @@
-\restrict VrNAwHwvLAm7hfW7oJgiAzhJpNcGdMRt9KuYYggFdbuwO4dpoGx7IAam1KAsf4Q
+\restrict kWfCczsbmD610ctKc4PsaLTjocZi655k2at8DMTYU8B602cnKbvEz1CIpvzc31o
 
 -- Dumped from database version 17.7
 -- Dumped by pg_dump version 17.9 (Ubuntu 17.9-0ubuntu0.25.10.1)
@@ -375,7 +375,8 @@ CREATE TABLE public.quiz_quizzes (
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    deleted_at timestamp without time zone
+    deleted_at timestamp without time zone,
+    code character varying(8) NOT NULL
 );
 
 
@@ -826,6 +827,14 @@ ALTER TABLE ONLY public.quiz_questions
 
 
 --
+-- Name: quiz_quizzes quiz_quizzes_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quiz_quizzes
+    ADD CONSTRAINT quiz_quizzes_code_key UNIQUE (code);
+
+
+--
 -- Name: quiz_quizzes quiz_quizzes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -988,6 +997,13 @@ CREATE INDEX idx_quiz_options_question_id ON public.quiz_options USING btree (qu
 --
 
 CREATE INDEX idx_quiz_questions_quiz_id ON public.quiz_questions USING btree (quiz_id);
+
+
+--
+-- Name: idx_quiz_quizzes_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_quiz_quizzes_code ON public.quiz_quizzes USING btree (code);
 
 
 --
@@ -1180,7 +1196,7 @@ ALTER TABLE ONLY public.user_has_tokens
 -- PostgreSQL database dump complete
 --
 
-\unrestrict VrNAwHwvLAm7hfW7oJgiAzhJpNcGdMRt9KuYYggFdbuwO4dpoGx7IAam1KAsf4Q
+\unrestrict kWfCczsbmD610ctKc4PsaLTjocZi655k2at8DMTYU8B602cnKbvEz1CIpvzc31o
 
 
 --
@@ -1207,4 +1223,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260403000005'),
     ('20260403144400'),
     ('20260403145100'),
-    ('20260403160200');
+    ('20260403160200'),
+    ('20260404000001');

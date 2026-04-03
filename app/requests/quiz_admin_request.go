@@ -1,7 +1,5 @@
 package requests
 
-// ── Quiz CRUD ─────────────────────────────────────────────────────────────────
-
 type CreateQuizRequest struct {
 	Title            string  `json:"title"             validate:"required,min=3,max=255"`
 	Description      *string `json:"description"       validate:"omitempty,min=3"`
@@ -18,8 +16,6 @@ type UpdateQuizRequest struct {
 	IsActive         bool    `json:"is_active"`
 }
 
-// ── Question CRUD ─────────────────────────────────────────────────────────────
-
 type CreateQuestionRequest struct {
 	QuestionText string `json:"question_text" validate:"required,min=3"`
 }
@@ -27,8 +23,6 @@ type CreateQuestionRequest struct {
 type UpdateQuestionRequest struct {
 	QuestionText string `json:"question_text" validate:"required,min=3"`
 }
-
-// ── Option CRUD ───────────────────────────────────────────────────────────────
 
 type CreateOptionRequest struct {
 	OptionText string `json:"option_text" validate:"required,min=1"`

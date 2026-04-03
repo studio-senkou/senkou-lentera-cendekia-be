@@ -3,6 +3,7 @@ package controllers
 import (
 	"database/sql"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/studio-senkou/lentera-cendekia-be/app/models"
@@ -21,12 +22,6 @@ func NewQuizController() *QuizController {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /quiz/:id
-// Mengambil soal kuis. User yang sudah 'completed' tetap bisa melihat kuis.
-// User yang 'in_progress' mendapatkan soal untuk dilanjutkan.
-// ─────────────────────────────────────────────────────────────────────────────
-
 func (qc *QuizController) GetQuiz(c *fiber.Ctx) error {
 	quizID, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
@@ -38,7 +33,6 @@ func (qc *QuizController) GetQuiz(c *fiber.Ctx) error {
 
 	userID := uint(c.Locals("userID").(int))
 
-	// 1. Cek attempt user terlebih dahulu untuk mendapatkan urutan soal (acak)
 	attempt, err := qc.quizRepo.GetActiveAttempt(userID, uint(quizID))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -48,7 +42,6 @@ func (qc *QuizController) GetQuiz(c *fiber.Ctx) error {
 		})
 	}
 
-	// 2. Jika belum ada attempt atau sudah di-reset → buat attempt baru (lazy creation + shuffle)
 	if attempt == nil {
 		newAttempt := &models.QuizAttempt{
 			QuizID: uint(quizID),
@@ -64,8 +57,6 @@ func (qc *QuizController) GetQuiz(c *fiber.Ctx) error {
 		attempt = newAttempt
 	}
 
-	// 3. Ambil kuis dan soal berdasarkan urutan yang tersimpan di attempt (acak per student)
-	// 3. Ambil kuis dan soal berdasarkan urutan yang tersimpan di attempt (acak per student)
 	quiz, questions, err := qc.quizRepo.GetActiveQuizWithQuestionsV2(uint(quizID), attempt)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -81,7 +72,6 @@ func (qc *QuizController) GetQuiz(c *fiber.Ctx) error {
 		})
 	}
 
-	// Jika user sudah 'completed', kembalikan info hasil saja — soal tidak perlu dikirim ulang
 	if attempt.Status == "completed" {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
 			"status":  "success",
@@ -107,11 +97,11 @@ func (qc *QuizController) GetQuiz(c *fiber.Ctx) error {
 		"message": "Quiz retrieved successfully",
 		"data": fiber.Map{
 			"quiz": fiber.Map{
-				"id":                  quiz.ID,
-				"title":               quiz.Title,
-				"description":         quiz.Description,
-				"time_limit_minutes":  quiz.TimeLimitMinutes,
-				"passing_score":       quiz.PassingScore,
+				"id":                 quiz.ID,
+				"title":              quiz.Title,
+				"description":        quiz.Description,
+				"time_limit_minutes": quiz.TimeLimitMinutes,
+				"passing_score":      quiz.PassingScore,
 			},
 			"attempt": fiber.Map{
 				"id":         attempt.ID,
@@ -123,10 +113,113 @@ func (qc *QuizController) GetQuiz(c *fiber.Ctx) error {
 	})
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /quiz/:id/submit
-// Submit jawaban kuis. Hanya bisa jika status attempt = 'in_progress'.
-// ─────────────────────────────────────────────────────────────────────────────
+func (qc *QuizController) GetQuizByCode(c *fiber.Ctx) error {
+	code := strings.ToUpper(strings.TrimSpace(c.Params("code")))
+	if code == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Quiz code is required",
+		})
+	}
+
+	quizID, err := qc.quizRepo.GetQuizIDByCode(code)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to look up quiz code",
+			"error":   err.Error(),
+		})
+	}
+	if quizID == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Quiz not found or inactive",
+		})
+	}
+
+	userID := uint(c.Locals("userID").(int))
+
+	attempt, err := qc.quizRepo.GetActiveAttempt(userID, quizID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to check attempt status",
+			"error":   err.Error(),
+		})
+	}
+
+	if attempt == nil {
+		newAttempt := &models.QuizAttempt{
+			QuizID: quizID,
+			UserID: userID,
+		}
+		if err := qc.quizRepo.CreateAttempt(newAttempt); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Failed to start quiz attempt",
+				"error":   err.Error(),
+			})
+		}
+		attempt = newAttempt
+	}
+
+	quiz, questions, err := qc.quizRepo.GetActiveQuizWithQuestionsV2(quizID, attempt)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to retrieve quiz",
+			"error":   err.Error(),
+		})
+	}
+	if quiz == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "fail",
+			"message": "Quiz not found or inactive",
+		})
+	}
+
+	if attempt.Status == "completed" {
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			"status":  "success",
+			"message": "You have already completed this quiz",
+			"data": fiber.Map{
+				"quiz": fiber.Map{
+					"id":    quiz.ID,
+					"code":  quiz.Code,
+					"title": quiz.Title,
+				},
+				"attempt": fiber.Map{
+					"id":           attempt.ID,
+					"status":       attempt.Status,
+					"score":        attempt.Score,
+					"submitted_at": attempt.SubmittedAt,
+				},
+				"questions": nil,
+			},
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "Quiz retrieved successfully",
+		"data": fiber.Map{
+			"quiz": fiber.Map{
+				"id":                 quiz.ID,
+				"code":               quiz.Code,
+				"title":              quiz.Title,
+				"description":        quiz.Description,
+				"time_limit_minutes": quiz.TimeLimitMinutes,
+				"passing_score":      quiz.PassingScore,
+			},
+			"attempt": fiber.Map{
+				"id":         attempt.ID,
+				"status":     attempt.Status,
+				"started_at": attempt.StartedAt,
+			},
+			"questions": buildQuestionsResponse(questions),
+		},
+	})
+}
 
 func (qc *QuizController) SubmitQuiz(c *fiber.Ctx) error {
 	quizID, err := strconv.ParseUint(c.Params("id"), 10, 64)
@@ -154,7 +247,6 @@ func (qc *QuizController) SubmitQuiz(c *fiber.Ctx) error {
 		})
 	}
 
-	// Pastikan ada attempt aktif yang in_progress
 	attempt, err := qc.quizRepo.GetActiveAttempt(userID, uint(quizID))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -176,7 +268,6 @@ func (qc *QuizController) SubmitQuiz(c *fiber.Ctx) error {
 		})
 	}
 
-	// Map request ke model
 	answers := make([]models.QuizAnswer, len(req.Answers))
 	for i, a := range req.Answers {
 		answers[i] = models.QuizAnswer{
@@ -195,7 +286,6 @@ func (qc *QuizController) SubmitQuiz(c *fiber.Ctx) error {
 		})
 	}
 
-	// Tentukan apakah user lulus
 	quiz, _, err := qc.quizRepo.GetActiveQuizWithQuestionsV2(uint(quizID), attempt)
 	if err != nil || quiz == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -210,19 +300,14 @@ func (qc *QuizController) SubmitQuiz(c *fiber.Ctx) error {
 		"status":  "success",
 		"message": "Quiz submitted successfully",
 		"data": fiber.Map{
-			"attempt_id":   completedAttempt.ID,
-			"score":        completedAttempt.Score,
+			"attempt_id":    completedAttempt.ID,
+			"score":         completedAttempt.Score,
 			"passing_score": quiz.PassingScore,
-			"passed":       passed,
-			"submitted_at": completedAttempt.SubmittedAt,
+			"passed":        passed,
+			"submitted_at":  completedAttempt.SubmittedAt,
 		},
 	})
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /quiz/:id/status
-// Cek status attempt user untuk kuis tertentu.
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (qc *QuizController) GetQuizStatus(c *fiber.Ctx) error {
 	quizID, err := strconv.ParseUint(c.Params("id"), 10, 64)
@@ -269,11 +354,6 @@ func (qc *QuizController) GetQuizStatus(c *fiber.Ctx) error {
 		},
 	})
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /quiz/:id/reset   [admin only]
-// Mereset attempt user sehingga user bisa mengerjakan ulang.
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (qc *QuizController) ResetAttempt(c *fiber.Ctx) error {
 	quizID, err := strconv.ParseUint(c.Params("id"), 10, 64)
@@ -322,34 +402,24 @@ func (qc *QuizController) ResetAttempt(c *fiber.Ctx) error {
 	})
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: build soal tanpa field is_correct agar aman dikirim ke client
-// ─────────────────────────────────────────────────────────────────────────────
-
 func buildQuestionsResponse(questions []models.QuizQuestion) []fiber.Map {
 	result := make([]fiber.Map, len(questions))
 	for i, q := range questions {
 		options := make([]fiber.Map, len(q.Options))
 		for j, o := range q.Options {
-		options[j] = fiber.Map{
-			"id":          o.ID,
-			"option_text": o.OptionText,
+			options[j] = fiber.Map{
+				"id":          o.ID,
+				"option_text": o.OptionText,
+			}
+		}
+		result[i] = fiber.Map{
+			"id":            q.ID,
+			"question_text": q.QuestionText,
+			"options":       options,
 		}
 	}
-	result[i] = fiber.Map{
-		"id":            q.ID,
-		"question_text": q.QuestionText,
-		"options":       options,
-	}
+	return result
 }
-return result
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /quiz/:id/questions/current
-// Mengambil soal yang sedang aktif berdasarkan current_question_index.
-// Jika belum ada attempt, buat attempt baru dan return soal pertama.
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (qc *QuizController) GetCurrentQuestion(c *fiber.Ctx) error {
 	quizID, err := strconv.ParseUint(c.Params("id"), 10, 64)
@@ -368,7 +438,6 @@ func (qc *QuizController) GetCurrentQuestion(c *fiber.Ctx) error {
 		})
 	}
 
-	// Buat attempt baru jika belum ada
 	if attempt == nil {
 		attempt = &models.QuizAttempt{QuizID: uint(quizID), UserID: userID}
 		if err := qc.quizRepo.CreateAttempt(attempt); err != nil {
@@ -388,25 +457,14 @@ func (qc *QuizController) GetCurrentQuestion(c *fiber.Ctx) error {
 	return qc.returnQuestionAtIndex(c, attempt, attempt.CurrentQuestionIndex)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /quiz/:id/questions/next
-// Maju ke soal berikutnya. Jika sudah di soal terakhir, kembalikan error.
-// ─────────────────────────────────────────────────────────────────────────────
-
 func (qc *QuizController) NextQuestion(c *fiber.Ctx) error {
 	return qc.navigateQuestion(c, 1)
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /quiz/:id/questions/prev
-// Mundur ke soal sebelumnya. Jika sudah di soal pertama, kembalikan error.
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (qc *QuizController) PrevQuestion(c *fiber.Ctx) error {
 	return qc.navigateQuestion(c, -1)
 }
 
-// navigateQuestion adalah helper bersama untuk next (+1) dan prev (-1)
 func (qc *QuizController) navigateQuestion(c *fiber.Ctx, direction int) error {
 	quizID, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
@@ -449,7 +507,6 @@ func (qc *QuizController) navigateQuestion(c *fiber.Ctx, direction int) error {
 		})
 	}
 
-	// Persist indeks baru ke database
 	if err := qc.quizRepo.UpdateAttemptIndex(attempt.ID, newIndex); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status": "error", "message": "Failed to update question index",
@@ -460,7 +517,6 @@ func (qc *QuizController) navigateQuestion(c *fiber.Ctx, direction int) error {
 	return qc.returnQuestionAtIndex(c, attempt, newIndex)
 }
 
-// returnQuestionAtIndex adalah helper untuk mengambil & mengembalikan soal berdasarkan indeks
 func (qc *QuizController) returnQuestionAtIndex(c *fiber.Ctx, attempt *models.QuizAttempt, index int) error {
 	total := len(attempt.QuestionIDs)
 	question, err := qc.quizRepo.GetQuestionByAttemptIndex(attempt, index)
@@ -488,7 +544,7 @@ func (qc *QuizController) returnQuestionAtIndex(c *fiber.Ctx, attempt *models.Qu
 		"message": "Question retrieved successfully",
 		"data": fiber.Map{
 			"navigation": fiber.Map{
-				"current_index":  index,
+				"current_index":   index,
 				"total_questions": total,
 				"has_prev":        index > 0,
 				"has_next":        index < total-1,
@@ -498,6 +554,49 @@ func (qc *QuizController) returnQuestionAtIndex(c *fiber.Ctx, attempt *models.Qu
 				"question_text": question.QuestionText,
 				"options":       options,
 			},
+		},
+	})
+}
+
+func (qc *QuizController) GetStudentQuizHistories(c *fiber.Ctx) error {
+	userID := uint(c.Locals("userID").(int))
+
+	attempts, err := qc.quizRepo.GetStudentQuizHistories(userID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Failed to retrieve quiz histories",
+			"error":   err.Error(),
+		})
+	}
+
+	histories := make([]fiber.Map, len(attempts))
+	for i, attempt := range attempts {
+		history := fiber.Map{
+			"id":         attempt.ID,
+			"quiz_id":    attempt.QuizID,
+			"status":     attempt.Status,
+			"score":      attempt.Score,
+			"started_at": attempt.StartedAt,
+		}
+
+		switch attempt.Status {
+		case "completed":
+			history["submitted_at"] = attempt.SubmittedAt
+		case "reset":
+			history["reset_at"] = attempt.ResetAt
+			history["reset_by"] = attempt.ResetBy
+		}
+
+		histories[i] = history
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "Quiz histories retrieved successfully",
+		"data": fiber.Map{
+			"histories": histories,
+			"total":     len(histories),
 		},
 	})
 }
