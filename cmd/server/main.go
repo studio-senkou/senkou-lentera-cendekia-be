@@ -47,6 +47,8 @@ func (a *application) Run() error {
 	routes.SetupTestimonyRoutes(router)
 	routes.SetupStaticAssetRoutes(router)
 	routes.SetupBlogRoutes(router)
+	routes.SetupQuizRoutes(router)
+	routes.SetupQuizAdminRoutes(router)
 
 	fiberApp.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("Welcome to Lentera Cendekia API")
